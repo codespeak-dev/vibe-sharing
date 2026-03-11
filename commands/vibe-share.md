@@ -14,8 +14,11 @@ Project dir: !`git rev-parse --show-toplevel 2>/dev/null || pwd`
 Has git: !`[ -d .git ] && echo "yes" || echo "no"`
 
 Session dir: !`echo "$HOME/.claude/projects/$(pwd | sed 's|/|-|g')"`
-Session count: !`ls -1 "$HOME/.claude/projects/$(pwd | sed 's|/|-|g')"/*.jsonl 2>/dev/null | wc -l || echo 0`
+Session count: !`find "$HOME/.claude/projects/$(pwd | sed 's|/|-|g')" -maxdepth 1 -name "*.jsonl" -type f 2>/dev/null | wc -l | tr -d ' '`
+Subagent session count: !`find "$HOME/.claude/projects/$(pwd | sed 's|/|-|g')" -path "*/subagents/*.jsonl" -type f 2>/dev/null | wc -l | tr -d ' '`
 Has memory: !`[ -d "$HOME/.claude/projects/$(pwd | sed 's|/|-|g')/memory" ] && echo "yes" || echo "no"`
+Plans dir: !`echo "$HOME/.claude/plans"`
+Referenced plan count: !`find "$HOME/.claude/projects/$(pwd | sed 's|/|-|g')" -name "*.jsonl" -type f -exec grep -ohE '\.claude/plans/[a-zA-Z0-9_-]+\.md' {} + 2>/dev/null | sed 's|.*/||' | sort -u | while IFS= read -r p; do [ -f "$HOME/.claude/plans/$p" ] && echo "$p"; done | wc -l | tr -d ' '`
 
 Untracked/changed files (not secrets): !`{ git ls-files --others --exclude-standard 2>/dev/null; git diff --name-only HEAD 2>/dev/null; git diff --name-only --staged 2>/dev/null; } | sort -u | while IFS= read -r f; do case "$(basename "$f")" in .env|.env.*|*.key|*.pem|*.p12|*.pfx) ;; *) [ -f "$f" ] && echo "$f" ;; esac; done`
 Loose file count: !`{ git ls-files --others --exclude-standard 2>/dev/null; git diff --name-only HEAD 2>/dev/null; git diff --name-only --staged 2>/dev/null; } | sort -u | while IFS= read -r f; do case "$(basename "$f")" in .env|.env.*|*.key|*.pem|*.p12|*.pfx) ;; *) [ -f "$f" ] && echo "$f" ;; esac; done | wc -l`
@@ -39,7 +42,8 @@ The zip does NOT contain all source files. Instead:
 - **repo.bundle** — git bundle with full history (all tracked source is recoverable via `git clone repo.bundle .`)
 - **file-tree.txt** — text listing of ALL files on disk (including node_modules etc.)
 - **git-status.txt** + **git-diff.txt** — snapshots of current state
-- **claude-sessions/** — all .jsonl session transcripts + memory for this project
+- **claude-sessions/** — the entire project sessions directory: main transcripts, subagent transcripts, tool results, and memory
+- **claude-plans/** — plan files from `~/.claude/plans/` that are referenced in the session transcripts
 - **untracked-files/** — actual copies of untracked/changed files ONLY (stuff git doesn't have), excluding secret files
 
 ## Instructions
@@ -82,6 +86,8 @@ WHAT'S GOING IN THE ZIP:
   File tree listing ...... all files on disk
   Git status + diff ...... 2 snapshots
   Claude sessions ........ <count> transcripts
+  Subagent sessions ...... <count> transcripts
+  Plan files ............. <count> referenced plans
   Untracked/changed files  <count> files
 
 <if any excluded dirs have count > 0:>
@@ -124,6 +130,7 @@ TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 ZIP_NAME="vibe-share-${PROJECT_NAME}-${TIMESTAMP}.zip"
 ZIP_PATH="${PROJECT_DIR}/${ZIP_NAME}"
 SESSIONS_DIR="<session_dir from context>"
+PLANS_DIR="<plans_dir from context>"
 
 STAGING_DIR=$(mktemp -d)
 trap 'rm -rf "$STAGING_DIR"' EXIT
@@ -143,24 +150,24 @@ if [ -d "$PROJECT_DIR/.git" ]; then
   git -C "$PROJECT_DIR" bundle create "$STAGING_DIR/repo.bundle" --all 2>/dev/null || true
 fi
 
-# 4. Copy sessions and redact secrets (best effort)
+# 4. Copy entire sessions directory (sessions + subagents + tool-results + memory)
 SESSION_COUNT=0
+SUBAGENT_COUNT=0
 REDACTION_COUNT=0
 if [ -d "$SESSIONS_DIR" ]; then
-  mkdir -p "$STAGING_DIR/claude-sessions"
-  for f in "$SESSIONS_DIR"/*.jsonl; do
-    [ -f "$f" ] && cp "$f" "$STAGING_DIR/claude-sessions/" && SESSION_COUNT=$((SESSION_COUNT + 1))
-  done
-  [ -d "$SESSIONS_DIR/memory" ] && cp -r "$SESSIONS_DIR/memory" "$STAGING_DIR/claude-sessions/memory"
-  # Redact detected secrets in copied sessions
-  for f in "$STAGING_DIR/claude-sessions"/*.jsonl; do
-    [ -f "$f" ] || continue
+  cp -r "$SESSIONS_DIR" "$STAGING_DIR/claude-sessions"
+  SESSION_COUNT=$(find "$STAGING_DIR/claude-sessions" -maxdepth 1 -name "*.jsonl" -type f 2>/dev/null | wc -l | tr -d ' ')
+  SUBAGENT_COUNT=$(find "$STAGING_DIR/claude-sessions" -path "*/subagents/*.jsonl" -type f 2>/dev/null | wc -l | tr -d ' ')
+  # Redact secrets in ALL jsonl files — sessions AND subagents (best effort)
+  find "$STAGING_DIR/claude-sessions" -name "*.jsonl" -type f | while IFS= read -r f; do
     before=$(wc -c < "$f")
     sed -i.bak -E 's/(sk-[a-zA-Z0-9]{4})[a-zA-Z0-9]{16,}/\1***REDACTED***/g' "$f"
     sed -i.bak -E 's/(AKIA[A-Z0-9]{4})[A-Z0-9]{12,}/\1***REDACTED***/g' "$f"
     sed -i.bak -E 's/(AIza[a-zA-Z0-9_-]{4})[a-zA-Z0-9_-]{31,}/\1***REDACTED***/g' "$f"
     sed -i.bak -E 's/(sk_live_[a-zA-Z0-9]{4})[a-zA-Z0-9]{20,}/\1***REDACTED***/g' "$f"
+    sed -i.bak -E 's/(rk_live_[a-zA-Z0-9]{4})[a-zA-Z0-9]{20,}/\1***REDACTED***/g' "$f"
     sed -i.bak -E 's/(ghp_[a-zA-Z0-9]{4})[a-zA-Z0-9]{32,}/\1***REDACTED***/g' "$f"
+    sed -i.bak -E 's/(glpat-[a-zA-Z0-9_-]{4})[a-zA-Z0-9_-]{16,}/\1***REDACTED***/g' "$f"
     sed -i.bak -E 's/(xox[bpors]-[a-zA-Z0-9-]{4})[a-zA-Z0-9-]{6,}/\1***REDACTED***/g' "$f"
     sed -i.bak -E 's/(BEGIN[[:space:]]+(RSA|DSA|EC|OPENSSH)?[[:space:]]*PRIVATE[[:space:]]+KEY)/\1 ***REDACTED***/g' "$f"
     sed -i.bak -E 's#((postgresql|mysql|mongodb|redis|amqp)://[^:]*:)[^@]*(@)#\1***REDACTED***\3#g' "$f"
@@ -169,6 +176,19 @@ if [ -d "$SESSIONS_DIR" ]; then
     [ "$before" != "$after" ] && REDACTION_COUNT=$((REDACTION_COUNT + 1))
     rm -f "$f.bak"
   done
+fi
+
+# 4b. Collect referenced plan files
+PLAN_COUNT=0
+if [ -d "$PLANS_DIR" ] && [ -d "$STAGING_DIR/claude-sessions" ]; then
+  plan_files=$(find "$STAGING_DIR/claude-sessions" -name "*.jsonl" -type f -exec grep -ohE '\.claude/plans/[a-zA-Z0-9_-]+\.md' {} + 2>/dev/null | sed 's|.*/||' | sort -u || true)
+  if [ -n "$plan_files" ]; then
+    mkdir -p "$STAGING_DIR/claude-plans"
+    echo "$plan_files" | while IFS= read -r plan_name; do
+      [ -f "$PLANS_DIR/$plan_name" ] && cp "$PLANS_DIR/$plan_name" "$STAGING_DIR/claude-plans/"
+    done
+    PLAN_COUNT=$(echo "$plan_files" | wc -l | tr -d ' ')
+  fi
 fi
 
 # 5. Copy untracked/changed files (excluding secrets)
@@ -198,6 +218,8 @@ echo "ZIP_NAME=$ZIP_NAME"
 echo "ZIP_SIZE=$ZIP_SIZE"
 echo "ITEM_COUNT=$ITEM_COUNT"
 echo "SESSION_COUNT=$SESSION_COUNT"
+echo "SUBAGENT_COUNT=$SUBAGENT_COUNT"
+echo "PLAN_COUNT=$PLAN_COUNT"
 echo "LOOSE_COUNT=$LOOSE_COUNT"
 echo "REDACTION_COUNT=$REDACTION_COUNT"
 ```
@@ -223,6 +245,8 @@ CONTENTS:
   1 file tree listing
   2 git snapshots (status + diff)
   <session_count> Claude Code sessions
+  <subagent_count> subagent sessions
+  <plan_count> plan files
   <loose_count> untracked/changed files
 
 <if redaction_count > 0:>

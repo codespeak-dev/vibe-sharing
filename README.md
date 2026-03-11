@@ -31,7 +31,8 @@ The plugin walks you through an interactive flow:
 | `file-tree.txt` | Text listing of ALL files on disk (including deps like node_modules) |
 | `git-status.txt` | `git status` output at time of export |
 | `git-diff.txt` | `git diff` (staged + unstaged) at time of export |
-| `claude-sessions/` | All `.jsonl` session transcripts + memory for this project |
+| `claude-sessions/` | Full project sessions directory: main transcripts, subagent transcripts, tool results, and memory |
+| `claude-plans/` | Plan files from `~/.claude/plans/` referenced in the session transcripts |
 | `untracked-files/` | Actual copies of untracked/changed files only (stuff git doesn't have) |
 
 Source files are **not** copied directly — they're all in the git bundle. Only files that git doesn't have (untracked, modified) are copied as actual files.
@@ -53,7 +54,7 @@ cd my-project
 # Untracked files are in untracked-files/ if you need them
 ```
 
-Session transcripts are in the `claude-sessions/` directory as `.jsonl` files.
+Session transcripts are in the `claude-sessions/` directory — main sessions are top-level `.jsonl` files, subagent sessions are in `<session-id>/subagents/`. Plan files are in `claude-plans/`.
 
 ## Security
 

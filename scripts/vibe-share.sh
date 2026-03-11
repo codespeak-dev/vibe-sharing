@@ -19,6 +19,7 @@ PROJECT_NAME="$(basename "$PROJECT_DIR")"
 # --- Claude session directory ---
 ENCODED_PATH=$(echo "$PROJECT_DIR" | sed 's|/|-|g')
 SESSIONS_DIR="$HOME/.claude/projects/${ENCODED_PATH}"
+PLANS_DIR="$HOME/.claude/plans"
 
 # --- Secret file patterns (excluded from untracked file copies) ---
 is_secret_file() {
@@ -57,10 +58,33 @@ list_safe_loose_files() {
 
 count_sessions() {
   if [ -d "$SESSIONS_DIR" ]; then
+    # Count main sessions (top-level jsonl files only)
     find "$SESSIONS_DIR" -maxdepth 1 -name "*.jsonl" -type f 2>/dev/null | wc -l | tr -d ' '
   else
     echo "0"
   fi
+}
+
+count_subagent_sessions() {
+  if [ -d "$SESSIONS_DIR" ]; then
+    find "$SESSIONS_DIR" -path "*/subagents/*.jsonl" -type f 2>/dev/null | wc -l | tr -d ' '
+  else
+    echo "0"
+  fi
+}
+
+# Find plan files referenced in any session jsonl (including subagents)
+# Searches for the full path pattern ".claude/plans/<name>" to avoid false positives
+find_referenced_plans() {
+  if [ ! -d "$SESSIONS_DIR" ] || [ ! -d "$PLANS_DIR" ]; then
+    return
+  fi
+  # Extract all plan filenames actually referenced as paths in session transcripts
+  find "$SESSIONS_DIR" -name "*.jsonl" -type f -exec \
+    grep -ohE '\.claude/plans/[a-zA-Z0-9_-]+\.md' {} + 2>/dev/null \
+    | sed 's|.*/||' | sort -u | while IFS= read -r plan_name; do
+      [ -f "$PLANS_DIR/$plan_name" ] && echo "$plan_name"
+    done
 }
 
 list_secret_files() {
@@ -87,9 +111,12 @@ human_size() {
 # =====================
 if [ "$MODE" = "--scan" ]; then
   session_count=$(count_sessions)
+  subagent_count=$(count_subagent_sessions)
   secret_files=$(list_secret_files)
   loose_files=$(list_safe_loose_files)
   loose_count=$(echo "$loose_files" | grep -c . || echo "0")
+  plan_files=$(find_referenced_plans)
+  plan_count=$(echo "$plan_files" | grep -c . || echo "0")
 
   has_git="false"
   [ -d "$PROJECT_DIR/.git" ] && has_git="true"
@@ -97,14 +124,14 @@ if [ "$MODE" = "--scan" ]; then
   has_memory="false"
   [ -d "$SESSIONS_DIR/memory" ] && has_memory="true"
 
-  # Estimate size
+  # Estimate size (entire sessions dir, not just top-level jsonl)
   git_bundle_kb=0
   if [ -d "$PROJECT_DIR/.git" ]; then
     git_bundle_kb=$(du -sc "$PROJECT_DIR/.git" 2>/dev/null | tail -1 | cut -f1 || echo "0")
   fi
   session_kb=0
-  if [ -d "$SESSIONS_DIR" ] && ls "$SESSIONS_DIR"/*.jsonl >/dev/null 2>&1; then
-    session_kb=$(du -sc "$SESSIONS_DIR"/*.jsonl 2>/dev/null | tail -1 | cut -f1 || echo "0")
+  if [ -d "$SESSIONS_DIR" ]; then
+    session_kb=$(du -sc "$SESSIONS_DIR" 2>/dev/null | tail -1 | cut -f1 || echo "0")
   fi
   loose_kb=0
   if [ -n "$loose_files" ]; then
@@ -117,6 +144,8 @@ if [ "$MODE" = "--scan" ]; then
   "project_name": "$PROJECT_NAME",
   "project_dir": "$PROJECT_DIR",
   "session_count": $session_count,
+  "subagent_count": $subagent_count,
+  "plan_count": $plan_count,
   "loose_file_count": $loose_count,
   "has_git": $has_git,
   "has_memory": $has_memory,
@@ -172,26 +201,20 @@ elif [ "$MODE" = "--build" ]; then
     fi
   fi
 
-  # 4. Copy sessions and redact secrets (best effort)
+  # 4. Copy entire sessions directory (includes subagents, tool-results, memory)
   SESSION_COUNT=0
+  SUBAGENT_COUNT=0
   REDACTION_COUNT=0
   if [ -d "$SESSIONS_DIR" ]; then
-    mkdir -p "$STAGING_DIR/claude-sessions"
-    for f in "$SESSIONS_DIR"/*.jsonl; do
-      if [ -f "$f" ]; then
-        cp "$f" "$STAGING_DIR/claude-sessions/"
-        SESSION_COUNT=$((SESSION_COUNT + 1))
-      fi
-    done
-    if [ -d "$SESSIONS_DIR/memory" ]; then
-      cp -r "$SESSIONS_DIR/memory" "$STAGING_DIR/claude-sessions/memory"
-    fi
-    echo "  $SESSION_COUNT session file(s) copied"
+    # Copy the whole directory tree — this gets sessions, subagents, tool-results, memory, meta files
+    cp -r "$SESSIONS_DIR" "$STAGING_DIR/claude-sessions"
+    SESSION_COUNT=$(find "$STAGING_DIR/claude-sessions" -maxdepth 1 -name "*.jsonl" -type f 2>/dev/null | wc -l | tr -d ' ')
+    SUBAGENT_COUNT=$(find "$STAGING_DIR/claude-sessions" -path "*/subagents/*.jsonl" -type f 2>/dev/null | wc -l | tr -d ' ')
+    echo "  $SESSION_COUNT session(s) + $SUBAGENT_COUNT subagent session(s) copied"
 
-    # Redact secrets in the copied session files (best effort)
-    echo "  Scanning sessions for secrets (best effort)..."
-    for f in "$STAGING_DIR/claude-sessions"/*.jsonl; do
-      [ -f "$f" ] || continue
+    # Redact secrets in ALL copied jsonl files — sessions AND subagents (best effort)
+    echo "  Scanning all transcripts for secrets (best effort)..."
+    find "$STAGING_DIR/claude-sessions" -name "*.jsonl" -type f | while IFS= read -r f; do
       before=$(wc -c < "$f")
 
       # API keys: OpenAI, Anthropic, AWS, Google, Stripe, GitHub, GitLab, Slack
@@ -221,9 +244,28 @@ elif [ "$MODE" = "--build" ]; then
       rm -f "$f.bak"
     done
     if [ "$REDACTION_COUNT" -gt 0 ]; then
-      echo "  Redacted secrets in $REDACTION_COUNT session file(s)"
+      echo "  Redacted secrets in $REDACTION_COUNT transcript file(s)"
     else
-      echo "  No secrets detected in sessions"
+      echo "  No secrets detected in transcripts"
+    fi
+  fi
+
+  # 4b. Collect referenced plan files
+  PLAN_COUNT=0
+  if [ -d "$PLANS_DIR" ] && [ -d "$STAGING_DIR/claude-sessions" ]; then
+    echo "  Scanning for referenced plan files..."
+    plan_files=$(find_referenced_plans)
+    if [ -n "$plan_files" ]; then
+      mkdir -p "$STAGING_DIR/claude-plans"
+      echo "$plan_files" | while IFS= read -r plan_name; do
+        if [ -f "$PLANS_DIR/$plan_name" ]; then
+          cp "$PLANS_DIR/$plan_name" "$STAGING_DIR/claude-plans/"
+        fi
+      done
+      PLAN_COUNT=$(echo "$plan_files" | wc -l | tr -d ' ')
+      echo "  $PLAN_COUNT plan file(s) copied"
+    else
+      echo "  No referenced plan files found"
     fi
   fi
 
@@ -258,6 +300,8 @@ elif [ "$MODE" = "--build" ]; then
   echo "ZIP_SIZE=$ZIP_SIZE"
   echo "ITEM_COUNT=$ITEM_COUNT"
   echo "SESSION_COUNT=$SESSION_COUNT"
+  echo "SUBAGENT_COUNT=$SUBAGENT_COUNT"
+  echo "PLAN_COUNT=$PLAN_COUNT"
   echo "LOOSE_COUNT=$LOOSE_COUNT"
   echo "REDACTION_COUNT=$REDACTION_COUNT"
 
@@ -293,9 +337,9 @@ elif [ "$MODE" = "--scan-sessions" ]; then
   # Patterns that commonly indicate secrets in conversation transcripts
   # Organized by category for clear reporting
   found=0
-  for f in "$SESSIONS_DIR"/*.jsonl; do
-    [ -f "$f" ] || continue
-    session_name=$(basename "$f")
+  # Scan ALL jsonl files: main sessions AND subagent sessions
+  while IFS= read -r f; do
+    session_name=$(echo "$f" | sed "s|$SESSIONS_DIR/||")
 
     # API keys (OpenAI, Anthropic, AWS, Google, Stripe, etc.)
     matches=$(grep -noE '(sk-[a-zA-Z0-9]{20,}|AKIA[A-Z0-9]{16}|AIza[a-zA-Z0-9_-]{35}|sk_live_[a-zA-Z0-9]{24,}|rk_live_[a-zA-Z0-9]{24,}|ghp_[a-zA-Z0-9]{36}|glpat-[a-zA-Z0-9_-]{20,}|xox[bpors]-[a-zA-Z0-9-]{10,})' "$f" 2>/dev/null || true)
@@ -331,7 +375,7 @@ elif [ "$MODE" = "--scan-sessions" ]; then
       echo "SECRET_ASSIGNMENT|$session_name|$(echo "$matches" | wc -l | tr -d ' ') occurrence(s)"
       found=$((found + 1))
     fi
-  done
+  done < <(find "$SESSIONS_DIR" -name "*.jsonl" -type f)
 
   if [ "$found" -eq 0 ]; then
     echo "NO_SUSPECTS_FOUND"
