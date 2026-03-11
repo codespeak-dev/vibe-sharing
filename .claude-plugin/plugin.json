@@ -1,0 +1,8 @@
+{
+  "name": "vibe-sharing",
+  "description": "Package Claude Code sessions and project files into a shareable zip. Excludes secrets, dependencies, and build artifacts. Interactive preview and review before sharing.",
+  "version": "0.1.0",
+  "author": {
+    "name": "codespeak-dev"
+  }
+}
