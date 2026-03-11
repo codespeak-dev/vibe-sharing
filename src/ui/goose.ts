@@ -1,68 +1,89 @@
 /**
  * Animated gratitude art frames and rendering helper.
- * Cycles through appreciation graphics when the user navigates prompts.
+ * Cycles through emoji appreciation graphics when the user navigates prompts.
  */
 
 /**
- * Normalize all frames to identical dimensions (same height and width).
- * Shorter frames get blank lines appended; narrower lines get space-padded.
+ * Get the terminal display width of a string.
+ * Emoji (above BMP, i.e. surrogate pairs) count as 2 columns;
+ * zero-width joiners and variation selectors count as 0;
+ * everything else counts as 1.
+ */
+function displayWidth(str: string): number {
+  let width = 0;
+  for (const char of str) {
+    const cp = char.codePointAt(0)!;
+    if (cp === 0xfe0f || cp === 0xfe0e || cp === 0x200d) continue;
+    width += cp > 0xffff ? 2 : 1;
+  }
+  return width;
+}
+
+/** Pad a string with trailing spaces to reach a target display width. */
+function padEndDisplay(str: string, targetWidth: number): string {
+  return str + " ".repeat(Math.max(0, targetWidth - displayWidth(str)));
+}
+
+/**
+ * Normalize all frames to identical display dimensions (same height and
+ * display width).  Shorter frames get blank lines; narrower lines get padded.
  */
 function normalizeFrames(frames: string[][]): string[][] {
   const maxHeight = Math.max(...frames.map((f) => f.length));
   const maxWidth = Math.max(
-    ...frames.flatMap((f) => f.map((l) => l.length)),
+    ...frames.flatMap((f) => f.map(displayWidth)),
   );
   return frames.map((frame) => {
-    const padded = frame.map((l) => l.padEnd(maxWidth));
+    const padded = frame.map((l) => padEndDisplay(l, maxWidth));
     while (padded.length < maxHeight) padded.push(" ".repeat(maxWidth));
     return padded;
   });
 }
 
 /**
- * 4 frames of gratitude-themed ASCII art.
- * All frames are normalized to the same height and width.
+ * 4 frames of emoji gratitude art.
+ * All frames are normalized to the same display height and width.
  */
 export const GOOSE_FRAMES: string[][] = normalizeFrames([
-  // Frame 0: heart made of <3s
+  // Frame 0: hearts diamond
   [
-    " <3       <3 ",
-    "   <3   <3   ",
-    "     <3      ",
-    "   THANK     ",
-    "    YOU!     ",
-    "   <3   <3   ",
-    " <3       <3 ",
+    "💛       💛",
+    "  💚   💚  ",
+    "    💙     ",
+    "  THANK    ",
+    "   YOU!    ",
+    "  💜   💜  ",
+    "💖       💖",
   ],
-  // Frame 1: stars border + message
+  // Frame 1: star border + message
   [
-    " * . * . * . ",
-    " .         . ",
-    " *  YOU    * ",
-    " .   ARE   . ",
-    " * AMAZING!* ",
-    " .         . ",
-    " * . * . * . ",
+    "🌟 🌟 🌟 🌟",
+    "🌟        🌟",
+    "🌟  YOU   🌟",
+    "🌟  ARE   🌟",
+    "🌟AMAZING!🌟",
+    "🌟        🌟",
+    "🌟 🌟 🌟 🌟",
   ],
-  // Frame 2: radiating gratitude
+  // Frame 2: celebration
   [
-    "  \\  |  //   ",
-    "   \\ | //    ",
-    "   SO MUCH   ",
-    "  GRATITUDE! ",
-    "   // | \\\\   ",
-    "  //  |  \\\\  ",
-    "              ",
+    "🎉  🙏  🎉",
+    "   SO      ",
+    "   MUCH    ",
+    " GRATITUDE!",
+    "    🙏     ",
+    "🎊  🙌  🎊",
+    "           ",
   ],
   // Frame 3: trophy
   [
-    "   .-###-.   ",
-    "   | #1! |   ",
-    "   '-----'   ",
-    "     |||     ",
-    "   .------.  ",
-    "  YOU'RE THE ",
-    "    BEST!    ",
+    "  🏆🏆🏆  ",
+    "  🏆#1!🏆 ",
+    "  🏆🏆🏆  ",
+    "    💪     ",
+    " YOU'RE THE",
+    "   BEST!   ",
+    "  🔥🔥🔥  ",
   ],
 ]);
 
@@ -74,8 +95,8 @@ function stripAnsi(str: string): string {
   return str.replace(/\x1b\[[0-9;]*m/g, "");
 }
 
-/** Width of the goose column (frame width + gap to content). */
-const GOOSE_COL_WIDTH = GOOSE_FRAMES[0]![0]!.length + 2;
+/** Display-width of the art column (frame display width + gap). */
+const GOOSE_COL_WIDTH = displayWidth(GOOSE_FRAMES[0]![0]!) + 2;
 
 /**
  * Render the goose alongside prompt output.
