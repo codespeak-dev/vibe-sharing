@@ -19,6 +19,8 @@ Subagent session count: !`find "$HOME/.claude/projects/$(pwd | sed 's|/|-|g')" -
 Has memory: !`[ -d "$HOME/.claude/projects/$(pwd | sed 's|/|-|g')/memory" ] && echo "yes" || echo "no"`
 Plans dir: !`echo "$HOME/.claude/plans"`
 Referenced plan count: !`find "$HOME/.claude/projects/$(pwd | sed 's|/|-|g')" -name "*.jsonl" -type f -exec grep -ohE '\.claude/plans/[a-zA-Z0-9_-]+\.md' {} + 2>/dev/null | sed 's|.*/||' | sort -u | while IFS= read -r p; do [ -f "$HOME/.claude/plans/$p" ] && echo "$p"; done | wc -l | tr -d ' '`
+Debug dir: !`echo "$HOME/.claude/debug"`
+Referenced debug count: !`find "$HOME/.claude/projects/$(pwd | sed 's|/|-|g')" -name "*.jsonl" -type f -exec grep -ohE '\.claude/debug/[a-zA-Z0-9_-]+\.txt' {} + 2>/dev/null | sed 's|.*/||' | sort -u | while IFS= read -r d; do [ -f "$HOME/.claude/debug/$d" ] && echo "$d"; done | wc -l | tr -d ' '`
 
 Untracked/changed files (not secrets): !`{ git ls-files --others --exclude-standard 2>/dev/null; git diff --name-only HEAD 2>/dev/null; git diff --name-only --staged 2>/dev/null; } | sort -u | while IFS= read -r f; do case "$(basename "$f")" in .env|.env.*|*.key|*.pem|*.p12|*.pfx) ;; *) [ -f "$f" ] && echo "$f" ;; esac; done`
 Loose file count: !`{ git ls-files --others --exclude-standard 2>/dev/null; git diff --name-only HEAD 2>/dev/null; git diff --name-only --staged 2>/dev/null; } | sort -u | while IFS= read -r f; do case "$(basename "$f")" in .env|.env.*|*.key|*.pem|*.p12|*.pfx) ;; *) [ -f "$f" ] && echo "$f" ;; esac; done | wc -l`
@@ -44,6 +46,7 @@ The zip does NOT contain all source files. Instead:
 - **git-status.txt** + **git-diff.txt** — snapshots of current state
 - **claude-sessions/** — the entire project sessions directory: main transcripts, subagent transcripts, tool results, and memory
 - **claude-plans/** — plan files from `~/.claude/plans/` that are referenced in the session transcripts
+- **claude-debug/** — debug logs from `~/.claude/debug/` that are referenced in the session transcripts
 - **untracked-files/** — actual copies of untracked/changed files ONLY (stuff git doesn't have), excluding secret files
 
 ## Instructions
@@ -88,6 +91,7 @@ WHAT'S GOING IN THE ZIP:
   Claude sessions ........ <count> transcripts
   Subagent sessions ...... <count> transcripts
   Plan files ............. <count> referenced plans
+  Debug logs ............. <count> referenced logs
   Untracked/changed files  <count> files
 
 <if any excluded dirs have count > 0:>
@@ -131,6 +135,7 @@ ZIP_NAME="vibe-share-${PROJECT_NAME}-${TIMESTAMP}.zip"
 ZIP_PATH="${PROJECT_DIR}/${ZIP_NAME}"
 SESSIONS_DIR="<session_dir from context>"
 PLANS_DIR="<plans_dir from context>"
+DEBUG_DIR="<debug_dir from context>"
 
 STAGING_DIR=$(mktemp -d)
 trap 'rm -rf "$STAGING_DIR"' EXIT
@@ -191,6 +196,19 @@ if [ -d "$PLANS_DIR" ] && [ -d "$STAGING_DIR/claude-sessions" ]; then
   fi
 fi
 
+# 4c. Collect referenced debug files
+DEBUG_COUNT=0
+if [ -d "$DEBUG_DIR" ] && [ -d "$STAGING_DIR/claude-sessions" ]; then
+  debug_files=$(find "$STAGING_DIR/claude-sessions" -name "*.jsonl" -type f -exec grep -ohE '\.claude/debug/[a-zA-Z0-9_-]+\.txt' {} + 2>/dev/null | sed 's|.*/||' | sort -u || true)
+  if [ -n "$debug_files" ]; then
+    mkdir -p "$STAGING_DIR/claude-debug"
+    echo "$debug_files" | while IFS= read -r debug_name; do
+      [ -f "$DEBUG_DIR/$debug_name" ] && cp "$DEBUG_DIR/$debug_name" "$STAGING_DIR/claude-debug/"
+    done
+    DEBUG_COUNT=$(echo "$debug_files" | wc -l | tr -d ' ')
+  fi
+fi
+
 # 5. Copy untracked/changed files (excluding secrets)
 LOOSE_COUNT=0
 cd "$PROJECT_DIR"
@@ -220,6 +238,7 @@ echo "ITEM_COUNT=$ITEM_COUNT"
 echo "SESSION_COUNT=$SESSION_COUNT"
 echo "SUBAGENT_COUNT=$SUBAGENT_COUNT"
 echo "PLAN_COUNT=$PLAN_COUNT"
+echo "DEBUG_COUNT=$DEBUG_COUNT"
 echo "LOOSE_COUNT=$LOOSE_COUNT"
 echo "REDACTION_COUNT=$REDACTION_COUNT"
 ```
@@ -247,6 +266,7 @@ CONTENTS:
   <session_count> Claude Code sessions
   <subagent_count> subagent sessions
   <plan_count> plan files
+  <debug_count> debug logs
   <loose_count> untracked/changed files
 
 <if redaction_count > 0:>

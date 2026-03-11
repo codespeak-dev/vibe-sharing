@@ -20,6 +20,7 @@ PROJECT_NAME="$(basename "$PROJECT_DIR")"
 ENCODED_PATH=$(echo "$PROJECT_DIR" | sed 's|/|-|g')
 SESSIONS_DIR="$HOME/.claude/projects/${ENCODED_PATH}"
 PLANS_DIR="$HOME/.claude/plans"
+DEBUG_DIR="$HOME/.claude/debug"
 
 # --- Secret file patterns (excluded from untracked file copies) ---
 is_secret_file() {
@@ -87,6 +88,18 @@ find_referenced_plans() {
     done
 }
 
+# Find debug files referenced in any session jsonl (including subagents)
+find_referenced_debug_files() {
+  if [ ! -d "$SESSIONS_DIR" ] || [ ! -d "$DEBUG_DIR" ]; then
+    return
+  fi
+  find "$SESSIONS_DIR" -name "*.jsonl" -type f -exec \
+    grep -ohE '\.claude/debug/[a-zA-Z0-9_-]+\.txt' {} + 2>/dev/null \
+    | sed 's|.*/||' | sort -u | while IFS= read -r debug_name; do
+      [ -f "$DEBUG_DIR/$debug_name" ] && echo "$debug_name"
+    done
+}
+
 list_secret_files() {
   cd "$PROJECT_DIR"
   find . -maxdepth 3 -type f \( \
@@ -117,6 +130,8 @@ if [ "$MODE" = "--scan" ]; then
   loose_count=$(echo "$loose_files" | grep -c . || echo "0")
   plan_files=$(find_referenced_plans)
   plan_count=$(echo "$plan_files" | grep -c . || echo "0")
+  debug_files=$(find_referenced_debug_files)
+  debug_count=$(echo "$debug_files" | grep -c . || echo "0")
 
   has_git="false"
   [ -d "$PROJECT_DIR/.git" ] && has_git="true"
@@ -146,6 +161,7 @@ if [ "$MODE" = "--scan" ]; then
   "session_count": $session_count,
   "subagent_count": $subagent_count,
   "plan_count": $plan_count,
+  "debug_count": $debug_count,
   "loose_file_count": $loose_count,
   "has_git": $has_git,
   "has_memory": $has_memory,
@@ -269,6 +285,25 @@ elif [ "$MODE" = "--build" ]; then
     fi
   fi
 
+  # 4c. Collect referenced debug files
+  DEBUG_COUNT=0
+  if [ -d "$DEBUG_DIR" ] && [ -d "$STAGING_DIR/claude-sessions" ]; then
+    echo "  Scanning for referenced debug logs..."
+    debug_files=$(find_referenced_debug_files)
+    if [ -n "$debug_files" ]; then
+      mkdir -p "$STAGING_DIR/claude-debug"
+      echo "$debug_files" | while IFS= read -r debug_name; do
+        if [ -f "$DEBUG_DIR/$debug_name" ]; then
+          cp "$DEBUG_DIR/$debug_name" "$STAGING_DIR/claude-debug/"
+        fi
+      done
+      DEBUG_COUNT=$(echo "$debug_files" | wc -l | tr -d ' ')
+      echo "  $DEBUG_COUNT debug log(s) copied"
+    else
+      echo "  No referenced debug logs found"
+    fi
+  fi
+
   # 5. Copy untracked/changed files (excluding secrets)
   LOOSE_COUNT=0
   loose_files=$(list_safe_loose_files)
@@ -302,6 +337,7 @@ elif [ "$MODE" = "--build" ]; then
   echo "SESSION_COUNT=$SESSION_COUNT"
   echo "SUBAGENT_COUNT=$SUBAGENT_COUNT"
   echo "PLAN_COUNT=$PLAN_COUNT"
+  echo "DEBUG_COUNT=$DEBUG_COUNT"
   echo "LOOSE_COUNT=$LOOSE_COUNT"
   echo "REDACTION_COUNT=$REDACTION_COUNT"
 

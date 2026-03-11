@@ -33,6 +33,7 @@ The plugin walks you through an interactive flow:
 | `git-diff.txt` | `git diff` (staged + unstaged) at time of export |
 | `claude-sessions/` | Full project sessions directory: main transcripts, subagent transcripts, tool results, and memory |
 | `claude-plans/` | Plan files from `~/.claude/plans/` referenced in the session transcripts |
+| `claude-debug/` | Debug logs from `~/.claude/debug/` referenced in the session transcripts |
 | `untracked-files/` | Actual copies of untracked/changed files only (stuff git doesn't have) |
 
 Source files are **not** copied directly — they're all in the git bundle. Only files that git doesn't have (untracked, modified) are copied as actual files.
