@@ -2,7 +2,7 @@
 
 A Claude Code plugin that packages your project and Claude Code session transcripts into a shareable zip file.
 
-Built for sharing vibe-coded projects — includes your code, full git history, and the Claude conversations that built it.
+Built for sharing vibe-coded projects — includes your git history, the Claude conversations that built it, and any uncommitted work.
 
 ## Install
 
@@ -27,27 +27,30 @@ The plugin walks you through an interactive flow:
 
 | Content | Details |
 |---------|---------|
-| Source files | Full project tree (all tracked and untracked files) |
-| Git history | `repo.bundle` — compact single-file repo clone |
-| Git snapshots | `git-status.txt` and `git-diff.txt` at time of export |
-| Claude sessions | All `.jsonl` session transcripts + memory for this project |
+| `repo.bundle` | Git bundle — full repo history. Restore with `git clone repo.bundle .` |
+| `file-tree.txt` | Text listing of ALL files on disk (including deps like node_modules) |
+| `git-status.txt` | `git status` output at time of export |
+| `git-diff.txt` | `git diff` (staged + unstaged) at time of export |
+| `claude-sessions/` | All `.jsonl` session transcripts + memory for this project |
+| `untracked-files/` | Actual copies of untracked/changed files only (stuff git doesn't have) |
+
+Source files are **not** copied directly — they're all in the git bundle. Only files that git doesn't have (untracked, modified) are copied as actual files.
 
 ## What's excluded
 
-| Category | Patterns |
-|----------|----------|
-| Secrets | `.env`, `.env.*`, `*.key`, `*.pem`, `*.p12`, `*.pfx` |
-| Secret dirs | `.aws/`, `.ssh/` |
-| Dependencies | `node_modules/`, `venv/`, `.venv/`, `__pycache__/` |
-| Build output | `dist/`, `build/`, `.next/`, `.nuxt/`, `target/`, `vendor/` |
-| OS junk | `.DS_Store`, `Thumbs.db` |
+Secret files are never copied into the zip:
+
+`.env`, `.env.*`, `*.key`, `*.pem`, `*.p12`, `*.pfx`
+
+Gitignored files (node_modules, venv, build output, etc.) are excluded automatically — they only appear in `file-tree.txt` as a listing.
 
 ## Restoring a shared project
 
 ```bash
 unzip vibe-share-my-project-20260311-143022.zip
+git clone repo.bundle my-project
 cd my-project
-git clone repo.bundle .
+# Untracked files are in untracked-files/ if you need them
 ```
 
 Session transcripts are in the `claude-sessions/` directory as `.jsonl` files.

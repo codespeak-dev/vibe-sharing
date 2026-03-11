@@ -9,63 +9,180 @@ You are packaging this project and its Claude Code sessions into a zip file for 
 
 ## Context
 
-Script location: !`find "$HOME/.claude/plugins" -path "*/vibe-sharing/scripts/vibe-share.sh" -print -quit 2>/dev/null`
+Project name: !`basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"`
+Project dir: !`git rev-parse --show-toplevel 2>/dev/null || pwd`
+Has git: !`[ -d .git ] && echo "yes" || echo "no"`
 
-Scan results: !`bash "$(find "$HOME/.claude/plugins" -path "*/vibe-sharing/scripts/vibe-share.sh" -print -quit 2>/dev/null)" --scan`
+Session dir: !`echo "$HOME/.claude/projects/$(pwd | sed 's|/|-|g')"`
+Session count: !`ls -1 "$HOME/.claude/projects/$(pwd | sed 's|/|-|g')"/*.jsonl 2>/dev/null | wc -l || echo 0`
+Has memory: !`[ -d "$HOME/.claude/projects/$(pwd | sed 's|/|-|g')/memory" ] && echo "yes" || echo "no"`
+
+Untracked/changed files (not secrets): !`{ git ls-files --others --exclude-standard 2>/dev/null; git diff --name-only HEAD 2>/dev/null; git diff --name-only --staged 2>/dev/null; } | sort -u | while IFS= read -r f; do case "$(basename "$f")" in .env|.env.*|*.key|*.pem|*.p12|*.pfx) ;; *) [ -f "$f" ] && echo "$f" ;; esac; done`
+Loose file count: !`{ git ls-files --others --exclude-standard 2>/dev/null; git diff --name-only HEAD 2>/dev/null; git diff --name-only --staged 2>/dev/null; } | sort -u | while IFS= read -r f; do case "$(basename "$f")" in .env|.env.*|*.key|*.pem|*.p12|*.pfx) ;; *) [ -f "$f" ] && echo "$f" ;; esac; done | wc -l`
+
+Secret files found: !`find . -maxdepth 3 -type f \( -name ".env" -o -name ".env.*" -o -name ".env.local" -o -name ".env.production" -o -name "*.key" -o -name "*.pem" -o -name "*.p12" -o -name "*.pfx" \) 2>/dev/null || echo "(none)"`
+
+Excluded directories (present on disk but only in the tree listing, not copied):
+- node_modules: !`[ -d node_modules ] && find node_modules -type f 2>/dev/null | wc -l || echo 0` files
+- venv: !`[ -d venv ] && find venv -type f 2>/dev/null | wc -l || echo 0` files
+- .venv: !`[ -d .venv ] && find .venv -type f 2>/dev/null | wc -l || echo 0` files
+- __pycache__: !`find . -name __pycache__ -type d -exec find {} -type f \; 2>/dev/null | wc -l || echo 0` files
+- dist: !`[ -d dist ] && find dist -type f 2>/dev/null | wc -l || echo 0` files
+- build: !`[ -d build ] && find build -type f 2>/dev/null | wc -l || echo 0` files
+- .next: !`[ -d .next ] && find .next -type f 2>/dev/null | wc -l || echo 0` files
+- target: !`[ -d target ] && find target -type f 2>/dev/null | wc -l || echo 0` files
+- vendor: !`[ -d vendor ] && find vendor -type f 2>/dev/null | wc -l || echo 0` files
+
+## What goes in the zip
+
+The zip does NOT contain all source files. Instead:
+- **repo.bundle** — git bundle with full history (all tracked source is recoverable via `git clone repo.bundle .`)
+- **file-tree.txt** — text listing of ALL files on disk (including node_modules etc.)
+- **git-status.txt** + **git-diff.txt** — snapshots of current state
+- **claude-sessions/** — all .jsonl session transcripts + memory for this project
+- **untracked-files/** — actual copies of untracked/changed files ONLY (stuff git doesn't have), excluding secret files
 
 ## Instructions
 
-Follow this 3-step interactive flow. Use the scan results above to populate the previews.
+Before doing anything else, display this welcome message to the user as plain text (not in a tool):
+
+---
+
+**Vibe Share** — packaging your project for sharing.
+
+Your secrets matter to us. Here's what we do to protect them:
+
+- Secret files (`.env`, `*.key`, `*.pem`, etc.) are **never** included
+- Gitignored files (node_modules, venv, etc.) are **not copied** — they only appear as names in a text listing
+- Source code travels inside a git bundle, not as loose files
+- Only untracked/changed files get copied — and we filter secrets out of those too
+- You'll get a full preview before anything is created
+- After the zip is built, you can search it for suspect filenames before sharing
+
+---
+
+Then follow this 3-step interactive flow using the context above.
 
 ### Step 1: Preview & Consent
 
-Use AskUserQuestion to present a preview of what will be packaged. Parse the JSON scan results above and create a beautiful preview.
+Use AskUserQuestion to present a preview of what will be packaged.
 
 The question should be: "Ready to package your project for sharing?"
 The header should be: "Vibe Share"
 
 Create two options:
 
-**Option 1: "Create zip"** with a preview showing:
+**Option 1: "Create zip"** with a preview showing a nicely formatted summary:
 ```
 PROJECT: <project_name>
 
-WHAT'S GOING IN:
-  Source files ............ <file_count> files
-  Claude sessions ........ <session_count> transcripts
-  Git history ............ 1 bundle (full repo history)
+WHAT'S GOING IN THE ZIP:
+  Git bundle ............. full repo history
+  File tree listing ...... all files on disk
   Git status + diff ...... 2 snapshots
+  Claude sessions ........ <count> transcripts
+  Untracked/changed files  <count> files
 
-WHAT'S BEING EXCLUDED:
-  <for each excluded dir with count > 0, show:>
-  <dir_name>/ ............. <count> files skipped
-  <for each secret file found, show:>
-  <filename> .............. EXCLUDED (secret)
+<if any excluded dirs have count > 0:>
+ON DISK BUT NOT COPIED (in tree listing only):
+  <dir_name>/ ............. <count> files
+  ...
 
-ESTIMATED SIZE: ~<estimated_size>
+<if secret files were found:>
+SECRET FILES EXCLUDED:
+  <each secret file path>
+
+<if no loose files:>
+No untracked/changed files to copy
+(everything is in the git bundle)
 ```
 
-**Option 2: "Show full file list first"** with a preview showing:
+**Option 2: "Show untracked file list"** with a preview showing:
 ```
-I'll show you every file that would be
-included before creating the zip.
+I'll show you the untracked/changed files
+that would be copied into the zip.
 ```
 
-If the user picks "Show full file list first":
-1. Run the script with `--list` to get the full file list
-2. Show them the list
-3. Then ask the same question again (without the "Show full file list" option)
+If the user picks "Show untracked file list":
+1. Show them the untracked/changed files from the Context section
+2. Then ask the consent question again (without the "Show list" option)
 
 If the user picks "Create zip", proceed to Step 2.
 
 ### Step 2: Build
 
-Run the script with `--build`:
-```
-bash "<script_path>" --build
+Run the following Bash commands to build the zip. Substitute values from the Context section.
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT_DIR="<project_dir from context>"
+PROJECT_NAME="<project_name from context>"
+TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
+ZIP_NAME="vibe-share-${PROJECT_NAME}-${TIMESTAMP}.zip"
+ZIP_PATH="${PROJECT_DIR}/${ZIP_NAME}"
+SESSIONS_DIR="<session_dir from context>"
+
+STAGING_DIR=$(mktemp -d)
+trap 'rm -rf "$STAGING_DIR"' EXIT
+
+# 1. Full file tree listing (all files on disk, excluding .git internals)
+cd "$PROJECT_DIR"
+find . -not -path './.git/*' 2>/dev/null | sort > "$STAGING_DIR/file-tree.txt"
+
+# 2. Git status and diff
+if [ -d "$PROJECT_DIR/.git" ]; then
+  git -C "$PROJECT_DIR" status > "$STAGING_DIR/git-status.txt" 2>&1
+  { echo "=== Unstaged changes ==="; git -C "$PROJECT_DIR" diff 2>&1; echo ""; echo "=== Staged changes ==="; git -C "$PROJECT_DIR" diff --staged 2>&1; } > "$STAGING_DIR/git-diff.txt"
+fi
+
+# 3. Git bundle
+if [ -d "$PROJECT_DIR/.git" ]; then
+  git -C "$PROJECT_DIR" bundle create "$STAGING_DIR/repo.bundle" --all 2>/dev/null || true
+fi
+
+# 4. Copy sessions
+SESSION_COUNT=0
+if [ -d "$SESSIONS_DIR" ]; then
+  mkdir -p "$STAGING_DIR/claude-sessions"
+  for f in "$SESSIONS_DIR"/*.jsonl; do
+    [ -f "$f" ] && cp "$f" "$STAGING_DIR/claude-sessions/" && SESSION_COUNT=$((SESSION_COUNT + 1))
+  done
+  [ -d "$SESSIONS_DIR/memory" ] && cp -r "$SESSIONS_DIR/memory" "$STAGING_DIR/claude-sessions/memory"
+fi
+
+# 5. Copy untracked/changed files (excluding secrets)
+LOOSE_COUNT=0
+cd "$PROJECT_DIR"
+{ git ls-files --others --exclude-standard 2>/dev/null; git diff --name-only HEAD 2>/dev/null; git diff --name-only --staged 2>/dev/null; } | sort -u | while IFS= read -r file; do
+  base=$(basename "$file")
+  case "$base" in .env|.env.*|*.key|*.pem|*.p12|*.pfx) continue ;; esac
+  if [ -f "$PROJECT_DIR/$file" ]; then
+    target_dir="$STAGING_DIR/untracked-files/$(dirname "$file")"
+    mkdir -p "$target_dir"
+    cp "$PROJECT_DIR/$file" "$target_dir/"
+  fi
+done
+LOOSE_COUNT=$([ -d "$STAGING_DIR/untracked-files" ] && find "$STAGING_DIR/untracked-files" -type f | wc -l | tr -d ' ' || echo 0)
+
+# 6. Zip everything in staging
+cd "$STAGING_DIR"
+zip -r -q "$ZIP_PATH" .
+
+# 7. Report
+ZIP_SIZE=$(du -sh "$ZIP_PATH" | cut -f1)
+ITEM_COUNT=$(zipinfo -1 "$ZIP_PATH" 2>/dev/null | wc -l | tr -d ' ')
+echo "BUILD_COMPLETE"
+echo "ZIP_PATH=$ZIP_PATH"
+echo "ZIP_NAME=$ZIP_NAME"
+echo "ZIP_SIZE=$ZIP_SIZE"
+echo "ITEM_COUNT=$ITEM_COUNT"
+echo "SESSION_COUNT=$SESSION_COUNT"
+echo "LOOSE_COUNT=$LOOSE_COUNT"
 ```
 
-Parse the output to find ZIP_PATH, ZIP_SIZE, SESSION_COUNT, FILE_COUNT.
+Run this as a single Bash command. Parse the output to extract the reported values.
 
 ### Step 3: Review Result
 
@@ -82,12 +199,13 @@ CREATED: <zip_name>
 SIZE:    <zip_size>
 
 CONTENTS:
-  <file_count> files total
-  <session_count> Claude Code sessions
   1 git bundle (full history)
+  1 file tree listing
   2 git snapshots (status + diff)
+  <session_count> Claude Code sessions
+  <loose_count> untracked/changed files
 
-TO RESTORE GIT HISTORY:
+TO RESTORE THE PROJECT:
   unzip <zip_name>
   git clone repo.bundle .
 
@@ -106,10 +224,10 @@ password, credential, .env, etc.)
 **Option 3: "Delete zip and start over"** with a preview showing:
 ```
 I'll delete the zip so you can adjust
-exclusions and try again.
+and try again.
 ```
 
 Handle each choice:
 - "Looks good!" - Done! Tell the user where the zip is.
-- "Show me suspect files" - Run the script with `--suspects <zip_path>`. Show the results. Then ask again with just "Looks good!" and "Delete zip" options.
-- "Delete zip and start over" - Delete the zip file and tell the user they can run `/vibe-share` again.
+- "Show me suspect files" - Run: `zipinfo -1 "<zip_path>" | grep -iE 'secret|key|token|password|credential|\.env|\.pem|\.pfx|\.p12|private' || echo "No suspect files found!"`. Show results. Then ask again with just "Looks good!" and "Delete zip" options.
+- "Delete zip and start over" - Delete the zip file with `rm "<zip_path>"` and tell the user they can run `/vibe-share` again.
