@@ -56,6 +56,7 @@ Your secrets matter to us. Here's what we do to protect them:
 - Gitignored files (node_modules, venv, etc.) are **not copied** — they only appear as names in a text listing
 - Source code travels inside a git bundle, not as loose files
 - Only untracked/changed files get copied — and we filter secrets out of those too
+- Session transcripts are scanned and detected secrets are masked with `***REDACTED***` (best effort — pattern matching can't catch everything)
 - You'll get a full preview before anything is created
 - After the zip is built, you can search it for suspect filenames before sharing
 
@@ -142,14 +143,32 @@ if [ -d "$PROJECT_DIR/.git" ]; then
   git -C "$PROJECT_DIR" bundle create "$STAGING_DIR/repo.bundle" --all 2>/dev/null || true
 fi
 
-# 4. Copy sessions
+# 4. Copy sessions and redact secrets (best effort)
 SESSION_COUNT=0
+REDACTION_COUNT=0
 if [ -d "$SESSIONS_DIR" ]; then
   mkdir -p "$STAGING_DIR/claude-sessions"
   for f in "$SESSIONS_DIR"/*.jsonl; do
     [ -f "$f" ] && cp "$f" "$STAGING_DIR/claude-sessions/" && SESSION_COUNT=$((SESSION_COUNT + 1))
   done
   [ -d "$SESSIONS_DIR/memory" ] && cp -r "$SESSIONS_DIR/memory" "$STAGING_DIR/claude-sessions/memory"
+  # Redact detected secrets in copied sessions
+  for f in "$STAGING_DIR/claude-sessions"/*.jsonl; do
+    [ -f "$f" ] || continue
+    before=$(wc -c < "$f")
+    sed -i.bak -E 's/(sk-[a-zA-Z0-9]{4})[a-zA-Z0-9]{16,}/\1***REDACTED***/g' "$f"
+    sed -i.bak -E 's/(AKIA[A-Z0-9]{4})[A-Z0-9]{12,}/\1***REDACTED***/g' "$f"
+    sed -i.bak -E 's/(AIza[a-zA-Z0-9_-]{4})[a-zA-Z0-9_-]{31,}/\1***REDACTED***/g' "$f"
+    sed -i.bak -E 's/(sk_live_[a-zA-Z0-9]{4})[a-zA-Z0-9]{20,}/\1***REDACTED***/g' "$f"
+    sed -i.bak -E 's/(ghp_[a-zA-Z0-9]{4})[a-zA-Z0-9]{32,}/\1***REDACTED***/g' "$f"
+    sed -i.bak -E 's/(xox[bpors]-[a-zA-Z0-9-]{4})[a-zA-Z0-9-]{6,}/\1***REDACTED***/g' "$f"
+    sed -i.bak -E 's/(BEGIN[[:space:]]+(RSA|DSA|EC|OPENSSH)?[[:space:]]*PRIVATE[[:space:]]+KEY)/\1 ***REDACTED***/g' "$f"
+    sed -i.bak -E 's#((postgresql|mysql|mongodb|redis|amqp)://[^:]*:)[^@]*(@)#\1***REDACTED***\3#g' "$f"
+    sed -i.bak -E 's/(Bearer[[:space:]]+[a-zA-Z0-9_.-]{4})[a-zA-Z0-9_.-]{16,}/\1***REDACTED***/g' "$f"
+    after=$(wc -c < "$f")
+    [ "$before" != "$after" ] && REDACTION_COUNT=$((REDACTION_COUNT + 1))
+    rm -f "$f.bak"
+  done
 fi
 
 # 5. Copy untracked/changed files (excluding secrets)
@@ -180,6 +199,7 @@ echo "ZIP_SIZE=$ZIP_SIZE"
 echo "ITEM_COUNT=$ITEM_COUNT"
 echo "SESSION_COUNT=$SESSION_COUNT"
 echo "LOOSE_COUNT=$LOOSE_COUNT"
+echo "REDACTION_COUNT=$REDACTION_COUNT"
 ```
 
 Run this as a single Bash command. Parse the output to extract the reported values.
@@ -204,6 +224,13 @@ CONTENTS:
   2 git snapshots (status + diff)
   <session_count> Claude Code sessions
   <loose_count> untracked/changed files
+
+<if redaction_count > 0:>
+SECRETS REDACTED (best effort):
+  Detected and masked secrets in
+  <redaction_count> session file(s).
+  Pattern matching can't catch everything
+  — review before sharing sensitive projects.
 
 TO RESTORE THE PROJECT:
   unzip <zip_name>

@@ -172,8 +172,9 @@ elif [ "$MODE" = "--build" ]; then
     fi
   fi
 
-  # 4. Copy sessions
+  # 4. Copy sessions and redact secrets (best effort)
   SESSION_COUNT=0
+  REDACTION_COUNT=0
   if [ -d "$SESSIONS_DIR" ]; then
     mkdir -p "$STAGING_DIR/claude-sessions"
     for f in "$SESSIONS_DIR"/*.jsonl; do
@@ -186,6 +187,44 @@ elif [ "$MODE" = "--build" ]; then
       cp -r "$SESSIONS_DIR/memory" "$STAGING_DIR/claude-sessions/memory"
     fi
     echo "  $SESSION_COUNT session file(s) copied"
+
+    # Redact secrets in the copied session files (best effort)
+    echo "  Scanning sessions for secrets (best effort)..."
+    for f in "$STAGING_DIR/claude-sessions"/*.jsonl; do
+      [ -f "$f" ] || continue
+      before=$(wc -c < "$f")
+
+      # API keys: OpenAI, Anthropic, AWS, Google, Stripe, GitHub, GitLab, Slack
+      sed -i.bak -E 's/(sk-[a-zA-Z0-9]{4})[a-zA-Z0-9]{16,}/\1***REDACTED***/g' "$f"
+      sed -i.bak -E 's/(AKIA[A-Z0-9]{4})[A-Z0-9]{12,}/\1***REDACTED***/g' "$f"
+      sed -i.bak -E 's/(AIza[a-zA-Z0-9_-]{4})[a-zA-Z0-9_-]{31,}/\1***REDACTED***/g' "$f"
+      sed -i.bak -E 's/(sk_live_[a-zA-Z0-9]{4})[a-zA-Z0-9]{20,}/\1***REDACTED***/g' "$f"
+      sed -i.bak -E 's/(rk_live_[a-zA-Z0-9]{4})[a-zA-Z0-9]{20,}/\1***REDACTED***/g' "$f"
+      sed -i.bak -E 's/(ghp_[a-zA-Z0-9]{4})[a-zA-Z0-9]{32,}/\1***REDACTED***/g' "$f"
+      sed -i.bak -E 's/(glpat-[a-zA-Z0-9_-]{4})[a-zA-Z0-9_-]{16,}/\1***REDACTED***/g' "$f"
+      sed -i.bak -E 's/(xox[bpors]-[a-zA-Z0-9-]{4})[a-zA-Z0-9-]{6,}/\1***REDACTED***/g' "$f"
+
+      # Private keys
+      sed -i.bak -E 's/(BEGIN[[:space:]]+(RSA|DSA|EC|OPENSSH)?[[:space:]]*PRIVATE[[:space:]]+KEY)/\1 ***REDACTED***/g' "$f"
+
+      # Connection strings with credentials (redact the password part)
+      sed -i.bak -E 's#((postgresql|mysql|mongodb|redis|amqp)://[^:]*:)[^@]*(@)#\1***REDACTED***\3#g' "$f"
+
+      # Bearer tokens
+      sed -i.bak -E 's/(Bearer[[:space:]]+[a-zA-Z0-9_.-]{4})[a-zA-Z0-9_.-]{16,}/\1***REDACTED***/g' "$f"
+
+      after=$(wc -c < "$f")
+      if [ "$before" != "$after" ]; then
+        REDACTION_COUNT=$((REDACTION_COUNT + 1))
+      fi
+
+      rm -f "$f.bak"
+    done
+    if [ "$REDACTION_COUNT" -gt 0 ]; then
+      echo "  Redacted secrets in $REDACTION_COUNT session file(s)"
+    else
+      echo "  No secrets detected in sessions"
+    fi
   fi
 
   # 5. Copy untracked/changed files (excluding secrets)
@@ -220,6 +259,7 @@ elif [ "$MODE" = "--build" ]; then
   echo "ITEM_COUNT=$ITEM_COUNT"
   echo "SESSION_COUNT=$SESSION_COUNT"
   echo "LOOSE_COUNT=$LOOSE_COUNT"
+  echo "REDACTION_COUNT=$REDACTION_COUNT"
 
 # =====================
 # MODE: --review
@@ -241,7 +281,66 @@ elif [ "$MODE" = "--suspects" ]; then
   fi
   zipinfo -1 "$ZIP_ARG" | grep -iE 'secret|key|token|password|credential|\.env|\.pem|\.pfx|\.p12|private' || echo "No suspect files found!"
 
+# =====================
+# MODE: --scan-sessions
+# =====================
+elif [ "$MODE" = "--scan-sessions" ]; then
+  if [ ! -d "$SESSIONS_DIR" ]; then
+    echo "No sessions found."
+    exit 0
+  fi
+
+  # Patterns that commonly indicate secrets in conversation transcripts
+  # Organized by category for clear reporting
+  found=0
+  for f in "$SESSIONS_DIR"/*.jsonl; do
+    [ -f "$f" ] || continue
+    session_name=$(basename "$f")
+
+    # API keys (OpenAI, Anthropic, AWS, Google, Stripe, etc.)
+    matches=$(grep -noE '(sk-[a-zA-Z0-9]{20,}|AKIA[A-Z0-9]{16}|AIza[a-zA-Z0-9_-]{35}|sk_live_[a-zA-Z0-9]{24,}|rk_live_[a-zA-Z0-9]{24,}|ghp_[a-zA-Z0-9]{36}|glpat-[a-zA-Z0-9_-]{20,}|xox[bpors]-[a-zA-Z0-9-]{10,})' "$f" 2>/dev/null || true)
+    if [ -n "$matches" ]; then
+      echo "API_KEY|$session_name|$(echo "$matches" | head -5)"
+      found=$((found + 1))
+    fi
+
+    # Private keys
+    matches=$(grep -nc 'BEGIN.*PRIVATE KEY' "$f" 2>/dev/null || true)
+    if [ "$matches" -gt 0 ]; then
+      echo "PRIVATE_KEY|$session_name|$matches occurrence(s)"
+      found=$((found + 1))
+    fi
+
+    # Connection strings with credentials
+    matches=$(grep -noE '(postgresql|mysql|mongodb|redis|amqp)://[^"[:space:]]*:[^"[:space:]]*@' "$f" 2>/dev/null | head -3 || true)
+    if [ -n "$matches" ]; then
+      echo "CONNECTION_STRING|$session_name|$(echo "$matches" | wc -l | tr -d ' ') occurrence(s)"
+      found=$((found + 1))
+    fi
+
+    # Bearer tokens
+    matches=$(grep -noEi 'bearer [a-zA-Z0-9_.-]{20,}' "$f" 2>/dev/null | head -3 || true)
+    if [ -n "$matches" ]; then
+      echo "BEARER_TOKEN|$session_name|$(echo "$matches" | wc -l | tr -d ' ') occurrence(s)"
+      found=$((found + 1))
+    fi
+
+    # Generic secret assignments (password=, secret_key=, api_key=, etc.)
+    matches=$(grep -noEi '(password|passwd|secret_key|api_key|api_secret|access_token|auth_token)[[:space:]]*[=:][[:space:]]*["\x27]?[a-zA-Z0-9_/.+=-]{8,}' "$f" 2>/dev/null | head -5 || true)
+    if [ -n "$matches" ]; then
+      echo "SECRET_ASSIGNMENT|$session_name|$(echo "$matches" | wc -l | tr -d ' ') occurrence(s)"
+      found=$((found + 1))
+    fi
+  done
+
+  if [ "$found" -eq 0 ]; then
+    echo "NO_SUSPECTS_FOUND"
+  else
+    echo ""
+    echo "TOTAL_SUSPECTS=$found"
+  fi
+
 else
-  echo "Usage: vibe-share.sh [--scan|--list|--build|--review <zip>|--suspects <zip>]"
+  echo "Usage: vibe-share.sh [--scan|--list|--build|--review <zip>|--suspects <zip>|--scan-sessions]"
   exit 1
 fi
