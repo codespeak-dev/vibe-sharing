@@ -1,4 +1,6 @@
-import { confirm, checkbox, select } from "@inquirer/prompts";
+import { confirm } from "@inquirer/prompts";
+import gooseCheckbox from "./goose-checkbox.js";
+import gooseSelect from "./goose-select.js";
 import chalk from "chalk";
 import type { DiscoveredSession } from "../sessions/types.js";
 
@@ -18,7 +20,7 @@ export async function selectUntrackedFiles(
     ),
   );
 
-  const selected = await checkbox({
+  const selected = await gooseCheckbox({
     message: "Select untracked files to include:",
     choices: files.map((f) => ({
       name: f,
@@ -50,7 +52,7 @@ export async function selectSessions(
 
   if (allSessions.length === 0) return new Set();
 
-  const selected = await checkbox({
+  const selected = await gooseCheckbox({
     message: "Select sessions to include:",
     choices: allSessions.map(({ agent, session }) => {
       const desc =
@@ -72,7 +74,7 @@ export async function selectSessions(
  * Ask what to do when no sessions are found.
  */
 export async function promptNoSessions(): Promise<"browse" | "skip"> {
-  const choice = await select({
+  const choice = await gooseSelect({
     message: "No AI coding sessions found for this project. What would you like to do?",
     choices: [
       {
