@@ -1,54 +1,70 @@
 /**
- * Animated ASCII goose frames and rendering helper.
- * The goose flaps its wings when rendered alongside interactive prompts.
+ * Animated gratitude art frames and rendering helper.
+ * Cycles through appreciation graphics when the user navigates prompts.
  */
 
 /**
- * 4 frames of a front-facing goose with wing flapping animation.
- * Each frame is 7 lines tall, padded to 15 chars wide.
+ * Normalize all frames to identical dimensions (same height and width).
+ * Shorter frames get blank lines appended; narrower lines get space-padded.
  */
-export const GOOSE_FRAMES: string[][] = [
-  // Frame 0: wings down (at rest)
+function normalizeFrames(frames: string[][]): string[][] {
+  const maxHeight = Math.max(...frames.map((f) => f.length));
+  const maxWidth = Math.max(
+    ...frames.flatMap((f) => f.map((l) => l.length)),
+  );
+  return frames.map((frame) => {
+    const padded = frame.map((l) => l.padEnd(maxWidth));
+    while (padded.length < maxHeight) padded.push(" ".repeat(maxWidth));
+    return padded;
+  });
+}
+
+/**
+ * 4 frames of gratitude-themed ASCII art.
+ * All frames are normalized to the same height and width.
+ */
+export const GOOSE_FRAMES: string[][] = normalizeFrames([
+  // Frame 0: heart made of <3s
   [
-    "      ___      ",
-    "     (. .)     ",
-    "     (   )     ",
-    "     /   \\     ",
-    "    (_   _)    ",
-    "      | |      ",
-    "     _| |_     ",
+    " <3       <3 ",
+    "   <3   <3   ",
+    "     <3      ",
+    "   THANK     ",
+    "    YOU!     ",
+    "   <3   <3   ",
+    " <3       <3 ",
   ],
-  // Frame 1: wings extending out
+  // Frame 1: stars border + message
   [
-    "      ___      ",
-    "     (. .)     ",
-    "    /(   )\\    ",
-    "   / /   \\ \\   ",
-    "    (_   _)    ",
-    "      | |      ",
-    "     _| |_     ",
+    " * . * . * . ",
+    " .         . ",
+    " *  YOU    * ",
+    " .   ARE   . ",
+    " * AMAZING!* ",
+    " .         . ",
+    " * . * . * . ",
   ],
-  // Frame 2: wings spread
+  // Frame 2: radiating gratitude
   [
-    "      ___      ",
-    "   _ (. .) _   ",
-    "  / \\(   )/ \\  ",
-    "     /   \\     ",
-    "    (_   _)    ",
-    "      | |      ",
-    "     _| |_     ",
+    "  \\  |  //   ",
+    "   \\ | //    ",
+    "   SO MUCH   ",
+    "  GRATITUDE! ",
+    "   // | \\\\   ",
+    "  //  |  \\\\  ",
+    "              ",
   ],
-  // Frame 3: wings fully up
+  // Frame 3: trophy
   [
-    "  \\   ___   /  ",
-    "   \\ (. .) /   ",
-    "     (   )     ",
-    "     /   \\     ",
-    "    (_   _)    ",
-    "      | |      ",
-    "     _| |_     ",
+    "   .-###-.   ",
+    "   | #1! |   ",
+    "   '-----'   ",
+    "     |||     ",
+    "   .------.  ",
+    "  YOU'RE THE ",
+    "    BEST!    ",
   ],
-];
+]);
 
 const FRAME_COUNT = GOOSE_FRAMES.length;
 const GOOSE_HEIGHT = GOOSE_FRAMES[0]!.length;
