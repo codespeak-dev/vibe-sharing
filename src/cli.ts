@@ -27,7 +27,7 @@ import {
   confirmFileList,
   promptUploadMetadata,
 } from "./ui/prompts.js";
-import { getGitRemoteUrl } from "./utils/paths.js";
+import { getGitRemoteUrl, getRepoName } from "./utils/paths.js";
 import { getDefaultExcludeDescription } from "./utils/excludes.js";
 import { MAX_ARCHIVE_SIZE_MB } from "./config.js";
 import { VibeError, archiveTooLarge } from "./utils/errors.js";
@@ -60,6 +60,14 @@ export async function run(options: CliOptions): Promise<void> {
 
     let projectInput: ProjectInput;
     let projectFileCount: number;
+
+    // Detect repo name for archive naming (repo name > folder name)
+    const detectedRepoUrl = projectState.isGitRepo
+      ? await getGitRemoteUrl(projectState.root)
+      : null;
+    const projectName =
+      (detectedRepoUrl ? getRepoName(detectedRepoUrl) : null) ??
+      path.basename(projectState.root);
 
     if (projectState.isGitRepo) {
       bundlePath = projectState.bundlePath;
@@ -252,13 +260,12 @@ export async function run(options: CliOptions): Promise<void> {
     } else {
       // Try upload
       const backendReady = await isBackendAvailable();
+      const fallbackPath = path.join(
+        cwd,
+        `${projectName}-${Date.now()}.zip`,
+      );
 
       if (!backendReady) {
-        // Fall back to local save
-        const fallbackPath = path.join(
-          cwd,
-          `codespeak-vibe-share-${Date.now()}.zip`,
-        );
         await saveLocally(zipPath, fallbackPath);
         console.log();
         console.log(
@@ -276,10 +283,6 @@ export async function run(options: CliOptions): Promise<void> {
 
         if (!uploadConsent) {
           // Save locally instead
-          const fallbackPath = path.join(
-            cwd,
-            `codespeak-vibe-share-${Date.now()}.zip`,
-          );
           await saveLocally(zipPath, fallbackPath);
           console.log();
           console.log(
@@ -290,9 +293,6 @@ export async function run(options: CliOptions): Promise<void> {
         }
 
         // Collect optional metadata
-        const detectedRepoUrl = projectState.isGitRepo
-          ? await getGitRemoteUrl(projectState.root)
-          : null;
         const metadata = await promptUploadMetadata(detectedRepoUrl);
 
         const uploadSpinner = ora("Uploading...").start();

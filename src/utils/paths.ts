@@ -89,3 +89,15 @@ export async function getGitRemoteUrl(cwd: string): Promise<string | null> {
     return null;
   }
 }
+
+/**
+ * Extract repository name from a git remote URL.
+ * Handles HTTPS (https://github.com/user/repo.git) and
+ * SSH (git@github.com:user/repo.git) formats.
+ */
+export function getRepoName(remoteUrl: string): string | null {
+  // Take the last path segment, strip .git suffix
+  const match = remoteUrl.match(/\/([^/]+?)(?:\.git)?$/) ??
+    remoteUrl.match(/:([^/]+?)(?:\.git)?$/);
+  return match?.[1] ?? null;
+}

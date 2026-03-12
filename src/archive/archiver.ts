@@ -55,9 +55,10 @@ export interface ArchiveResult {
 export async function createArchive(
   input: ArchiveInput,
 ): Promise<ArchiveResult> {
+  const projectName = path.basename(input.project.root);
   const zipPath = path.join(
     os.tmpdir(),
-    `codespeak-vibe-share-${Date.now()}.zip`,
+    `${projectName}-${Date.now()}.zip`,
   );
 
   const output = fs.createWriteStream(zipPath);
