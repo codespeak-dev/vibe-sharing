@@ -2,8 +2,22 @@ import { confirm, input } from "@inquirer/prompts";
 import gooseCheckbox from "./goose-checkbox.js";
 import gooseSelect from "./goose-select.js";
 import chalk from "chalk";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { DiscoveredSession } from "../sessions/types.js";
 import type { UploadMetadata } from "../upload/upload.js";
+
+const execFileAsync = promisify(execFile);
+
+async function getGitConfig(key: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync("git", ["config", key]);
+    const value = stdout.trim();
+    return value || null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Let the user pick which untracked files to include.
@@ -118,23 +132,29 @@ export async function askCustomizeExcludes(): Promise<boolean> {
 export async function promptUploadMetadata(
   detectedRepoUrl?: string | null,
 ): Promise<UploadMetadata> {
-  console.log();
-  console.log(
-    chalk.dim("You can optionally provide contact info (press Enter to skip):"),
-  );
+  const gitEmail = await getGitConfig("user.email");
+  const gitName = await getGitConfig("user.name");
 
-  const userEmail = await input({ message: "Email (optional):" });
-  const userName = await input({ message: "Name (optional):" });
+  let userEmail = gitEmail ?? "";
+  let userName = gitName ?? "";
+
+  if (!gitEmail || !gitName) {
+    console.log();
+    console.log(
+      chalk.dim("You can optionally provide contact info (press Enter to skip):"),
+    );
+
+    if (!gitEmail) {
+      userEmail = await input({ message: "Email (optional):" });
+    }
+    if (!gitName) {
+      userName = await input({ message: "Name (optional):" });
+    }
+  }
 
   let repoUrl = "";
   if (detectedRepoUrl) {
-    const useDetected = await confirm({
-      message: `Include repo URL ${chalk.cyan(detectedRepoUrl)}?`,
-      default: true,
-    });
-    if (useDetected) {
-      repoUrl = detectedRepoUrl;
-    }
+    repoUrl = detectedRepoUrl;
   } else {
     repoUrl = await input({ message: "Repo URL (optional):" });
   }
