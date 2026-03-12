@@ -41,7 +41,7 @@ export class VibeShareStack extends cdk.Stack {
       partitionKey: { name: "uploadId", type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
-      pointInTimeRecovery: true,
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
     });
 
     // ─── Shared Lambda config ───
