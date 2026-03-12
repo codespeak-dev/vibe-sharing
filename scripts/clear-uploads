@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+STACK_NAME="VibeShareStack"
+REGION="eu-north-1"
+
+aws_opts=(--region "$REGION" --output json)
+
+# ── Resolve resource names from CloudFormation ──────────────────────────
+stack_outputs=$(aws cloudformation describe-stacks \
+  --stack-name "$STACK_NAME" "${aws_opts[@]}" \
+  | jq -r '.Stacks[0].Outputs')
+
+TABLE_NAME=$(echo "$stack_outputs" | jq -r '.[] | select(.OutputKey=="TableName") | .OutputValue')
+BUCKET_NAME=$(echo "$stack_outputs" | jq -r '.[] | select(.OutputKey=="BucketName") | .OutputValue')
+
+echo "Table:  $TABLE_NAME"
+echo "Bucket: $BUCKET_NAME"
+echo
+
+# ── Count what will be deleted ──────────────────────────────────────────
+record_count=$(aws dynamodb scan --table-name "$TABLE_NAME" --select COUNT "${aws_opts[@]}" | jq '.Count')
+object_count=$(aws s3 ls "s3://$BUCKET_NAME" --recursive --region "$REGION" 2>/dev/null | wc -l | tr -d ' ')
+
+echo "DynamoDB records: $record_count"
+echo "S3 objects:       $object_count"
+echo
+
+if [ "$record_count" -eq 0 ] && [ "$object_count" -eq 0 ]; then
+  echo "Nothing to clear."
+  exit 0
+fi
+
+echo "Delete all records from DB and S3?"
+read -rp 'Type "delete all" to confirm: ' confirm
+if [ "$confirm" != "delete all" ]; then
+  echo "Aborted."
+  exit 1
+fi
+
+# ── Delete DynamoDB records ─────────────────────────────────────────────
+if [ "$record_count" -gt 0 ]; then
+  echo "Deleting DynamoDB records..."
+  aws dynamodb scan --table-name "$TABLE_NAME" --projection-expression "uploadId" "${aws_opts[@]}" \
+    | jq -r '.Items[].uploadId.S' \
+    | while read -r id; do
+        aws dynamodb delete-item \
+          --table-name "$TABLE_NAME" \
+          --key "{\"uploadId\":{\"S\":\"$id\"}}" \
+          "${aws_opts[@]}" > /dev/null
+        echo "  deleted $id"
+      done
+fi
+
+# ── Delete S3 objects ───────────────────────────────────────────────────
+if [ "$object_count" -gt 0 ]; then
+  echo "Deleting S3 objects..."
+  aws s3 rm "s3://$BUCKET_NAME" --recursive --region "$REGION"
+fi
+
+echo
+echo "Done."
