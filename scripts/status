@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+STACK_NAME="VibeShareStack"
+REGION="eu-north-1"
+SHOW_LOGS=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --logs) SHOW_LOGS=true ;;
+  esac
+done
+
+aws_opts=(--region "$REGION" --output json)
+
+# ── Resolve resource names from CloudFormation ──────────────────────────
+echo "=== Resolving stack resources ($STACK_NAME) ==="
+
+stack_outputs=$(aws cloudformation describe-stacks \
+  --stack-name "$STACK_NAME" "${aws_opts[@]}" \
+  | jq -r '.Stacks[0].Outputs')
+
+TABLE_NAME=$(echo "$stack_outputs" | jq -r '.[] | select(.OutputKey=="TableName") | .OutputValue')
+BUCKET_NAME=$(echo "$stack_outputs" | jq -r '.[] | select(.OutputKey=="BucketName") | .OutputValue')
+
+echo "Table:  $TABLE_NAME"
+echo "Bucket: $BUCKET_NAME"
+echo
+
+# ── DynamoDB: all uploads ───────────────────────────────────────────────
+echo "=== DynamoDB Uploads ==="
+
+scan_result=$(aws dynamodb scan --table-name "$TABLE_NAME" "${aws_opts[@]}")
+count=$(echo "$scan_result" | jq '.Count')
+echo "Total records: $count"
+echo
+
+if [ "$count" -gt 0 ]; then
+  echo "$scan_result" | jq -r '
+    .Items[] |
+    [
+      .userName.S // "-",
+      .userEmail.S // "-",
+      .filename.S // "-",
+      (.sizeBytes.N // "0" | tonumber | if . > 1048576 then "\(. / 1048576 | round)MB"
+        elif . > 1024 then "\(. / 1024 | round)KB"
+        else "\(.)B" end),
+      .repoUrl.S // "-",
+      .status.S // "-",
+      .createdAt.S // "-",
+      .confirmedAt.S // "-",
+      .uploadId.S // "-"
+    ] | @tsv
+  ' | (echo -e "NAME\tEMAIL\tFILENAME\tSIZE\tREPO_URL\tSTATUS\tCREATED\tCONFIRMED\tUPLOAD_ID"; cat) | column -t -s $'\t'
+fi
+echo
+
+# ── S3: bucket contents ────────────────────────────────────────────────
+echo "=== S3 Bucket Contents ==="
+aws s3 ls "s3://$BUCKET_NAME" --recursive --human-readable --region "$REGION" || echo "(empty)"
+echo
+
+# ── Lambda: latest logs (opt-in) ──────────────────────────────────────
+if [ "$SHOW_LOGS" = true ]; then
+  echo "=== Lambda Logs (latest per function) ==="
+
+  lambda_functions=$(aws cloudformation list-stack-resources \
+    --stack-name "$STACK_NAME" "${aws_opts[@]}" \
+    | jq -r '.StackResourceSummaries[] | select(.ResourceType=="AWS::Lambda::Function") | .PhysicalResourceId')
+
+  for fn in $lambda_functions; do
+    log_group="/aws/lambda/$fn"
+    echo "--- $fn ---"
+
+    latest_stream=$(aws logs describe-log-streams \
+      --log-group-name "$log_group" \
+      --order-by LastEventTime \
+      --descending \
+      --limit 1 \
+      "${aws_opts[@]}" 2>/dev/null \
+      | jq -r '.logStreams[0].logStreamName // empty') || true
+
+    if [ -z "$latest_stream" ]; then
+      echo "(no logs found)"
+      echo
+      continue
+    fi
+
+    aws logs get-log-events \
+      --log-group-name "$log_group" \
+      --log-stream-name "$latest_stream" \
+      --limit 30 \
+      "${aws_opts[@]}" \
+      | jq -r '.events[] | "\(.timestamp / 1000 | strftime("%Y-%m-%d %H:%M:%S"))  \(.message)"' \
+      | sed 's/\\n/\n/g; s/\\t/\t/g'
+
+    echo
+  done
+fi
