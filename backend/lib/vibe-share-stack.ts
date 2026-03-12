@@ -5,6 +5,7 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as lambdaNode from "aws-cdk-lib/aws-lambda-nodejs";
 import * as apigatewayv2 from "aws-cdk-lib/aws-apigatewayv2";
 import * as apigatewayv2Integrations from "aws-cdk-lib/aws-apigatewayv2-integrations";
+import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as sns from "aws-cdk-lib/aws-sns";
 import * as snsSubscriptions from "aws-cdk-lib/aws-sns-subscriptions";
@@ -165,6 +166,23 @@ export class VibeShareStack extends cdk.Stack {
       };
     }
 
+    // ─── Custom Domain (vibe-share.codespeak.dev) ───
+    const cert = new acm.Certificate(this, "ApiCert", {
+      domainName: "vibe-share.codespeak.dev",
+      validation: acm.CertificateValidation.fromDns(), // Manual DNS validation at registrar
+    });
+
+    const customDomain = new apigatewayv2.DomainName(this, "ApiDomain", {
+      domainName: "vibe-share.codespeak.dev",
+      certificate: cert,
+    });
+
+    new apigatewayv2.ApiMapping(this, "ApiMapping", {
+      api,
+      domainName: customDomain,
+      stage: api.defaultStage!,
+    });
+
     // ─── Monitoring ───
     const alarmTopic = new sns.Topic(this, "AlarmTopic", {
       displayName: "VibeShare Alarms",
@@ -267,6 +285,16 @@ export class VibeShareStack extends cdk.Stack {
     new cdk.CfnOutput(this, "TableName", {
       value: table.tableName,
       description: "DynamoDB table name",
+    });
+
+    new cdk.CfnOutput(this, "CustomDomainTarget", {
+      value: customDomain.regionalDomainName,
+      description: "CNAME target for vibe-share.codespeak.dev DNS record",
+    });
+
+    new cdk.CfnOutput(this, "CustomDomainHostedZoneId", {
+      value: customDomain.regionalHostedZoneId,
+      description: "Hosted zone ID (for reference)",
     });
   }
 }

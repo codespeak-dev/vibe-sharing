@@ -1,6 +1,6 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { API_BASE_URL } from "../config.js";
+import { API_BASE_URL, isDefaultApiUrl } from "../config.js";
 import { networkError, uploadFailed, VibeError } from "../utils/errors.js";
 
 interface PresignResponse {
@@ -109,7 +109,7 @@ export async function uploadArchive(
  * Check if the upload backend is configured and reachable.
  */
 export async function isBackendAvailable(): Promise<boolean> {
-  if (!API_BASE_URL || API_BASE_URL === "https://api.codespeak.dev") {
+  if (!API_BASE_URL || isDefaultApiUrl) {
     // Check if the backend is actually reachable
     try {
       const controller = new AbortController();

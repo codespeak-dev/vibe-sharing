@@ -1,4 +1,6 @@
 export const config = {
+  region: "eu-north-1",
+
   alarmEmail: "a+alarms@codespeak.dev",
 
   // SSM parameter name containing the Slack incoming webhook URL.

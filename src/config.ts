@@ -28,8 +28,13 @@ export const CLINE_HISTORY_FILE = path.join(
   "taskHistory.json",
 );
 
+const DEFAULT_API_URL = "https://vibe-share.codespeak.dev";
+
 export const API_BASE_URL =
-  process.env.VIBE_SHARING_API_URL ?? "https://api.codespeak.dev";
+  process.env.VIBE_SHARING_API_URL ?? DEFAULT_API_URL;
+
+export const isDefaultApiUrl =
+  !process.env.VIBE_SHARING_API_URL || API_BASE_URL === DEFAULT_API_URL;
 
 export const MAX_ARCHIVE_SIZE_MB = 500;
 
