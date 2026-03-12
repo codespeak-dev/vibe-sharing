@@ -1,5 +1,6 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda";
-import { S3Client, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, HeadObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { ok, badRequest, notFound, serverError } from "../shared/response";
@@ -11,6 +12,7 @@ const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 const BUCKET_NAME = process.env.BUCKET_NAME!;
 const TABLE_NAME = process.env.TABLE_NAME!;
+const DOWNLOAD_URL_EXPIRY = 7 * 24 * 60 * 60; // 7 days in seconds
 
 export async function handler(
   event: APIGatewayProxyEventV2
@@ -36,9 +38,9 @@ export async function handler(
 
     const record = Item as UploadRecord;
 
-    // Idempotent: if already confirmed, return the shareUrl
+    // Idempotent: if already confirmed, return a fresh presigned URL
     if (record.status === "confirmed") {
-      return ok({ shareUrl: buildShareUrl(record.uploadId) });
+      return ok({ shareUrl: await buildDownloadUrl(record.s3Key, record.filename) });
     }
 
     // ─── Verify S3 object exists ───
@@ -72,13 +74,15 @@ export async function handler(
       })
     );
 
+    const shareUrl = await buildDownloadUrl(record.s3Key, record.filename);
+
     const sizeMB = (record.sizeBytes / 1024 / 1024).toFixed(1);
     await notifyUploadEvent(
       "Upload confirmed",
-      `File: ${record.filename} (${sizeMB} MB)\nUpload ID: ${record.uploadId}\nShare URL: ${buildShareUrl(record.uploadId)}`
+      `File: ${record.filename} (${sizeMB} MB)\nUpload ID: ${record.uploadId}`
     );
 
-    return ok({ shareUrl: buildShareUrl(record.uploadId) });
+    return ok({ shareUrl });
   } catch (err) {
     console.error("Confirm error:", err);
     if (err instanceof SyntaxError) {
@@ -88,6 +92,11 @@ export async function handler(
   }
 }
 
-function buildShareUrl(uploadId: string): string {
-  return `https://codespeak.dev/share/${uploadId}`;
+async function buildDownloadUrl(s3Key: string, filename: string): Promise<string> {
+  const command = new GetObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: s3Key,
+    ResponseContentDisposition: `attachment; filename="${filename}"`,
+  });
+  return getSignedUrl(s3, command, { expiresIn: DOWNLOAD_URL_EXPIRY });
 }
