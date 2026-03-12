@@ -49,10 +49,11 @@ export async function handler(
           Key: record.s3Key,
         })
       );
-    } catch {
+    } catch (s3Err) {
+      console.error("HeadObject failed:", s3Err);
       await notifyUploadEvent(
         "Upload failed",
-        `File not found in S3\nUpload ID: ${record.uploadId}\nFile: ${record.filename}`
+        `File not found in S3\nUpload ID: ${record.uploadId}\nFile: ${record.filename}\nError: ${s3Err}`
       );
       return badRequest("File not uploaded yet");
     }

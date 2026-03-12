@@ -96,10 +96,10 @@ export class VibeShareStack extends cdk.Stack {
       },
     });
 
-    // Confirm needs: HeadObject on S3 + GetItem/UpdateItem on DynamoDB
+    // Confirm needs: HeadObject on S3 (requires s3:GetObject) + GetItem/UpdateItem on DynamoDB
     confirmFn.addToRolePolicy(
       new iam.PolicyStatement({
-        actions: ["s3:HeadObject"],
+        actions: ["s3:GetObject"],
         resources: [bucket.arnForObjects(`${UPLOAD_PREFIX}*`)],
       })
     );
