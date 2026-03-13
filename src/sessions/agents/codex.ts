@@ -180,7 +180,7 @@ export class CodexProvider implements AgentProvider {
   ): Promise<DiscoveredSession | null> {
     let sessionId: string | null = null;
     let created: string | null = null;
-    let cwd: string | null = null;
+    const cwds = new Set<string>();
     let firstPrompt: string | null = null;
     let messageCount = 0;
 
@@ -196,7 +196,7 @@ export class CodexProvider implements AgentProvider {
           };
           sessionId = p.id ?? null;
           created = p.timestamp ?? null;
-          cwd = p.cwd ?? null;
+          if (p.cwd) cwds.add(p.cwd);
         } else if (entry.type === "response_item") {
           const p = entry.payload as {
             type?: string;
@@ -210,16 +210,18 @@ export class CodexProvider implements AgentProvider {
             }
           }
         } else if (entry.type === "turn_context") {
-          // turn_context can also carry cwd (updated per turn)
+          // turn_context carries cwd per turn — collect all of them
           const p = entry.payload as { cwd?: string };
-          if (p.cwd) cwd = p.cwd;
+          if (p.cwd) cwds.add(p.cwd);
         }
       }
     } catch {
       return null;
     }
 
-    if (!cwd || !this.cwdMatches(cwd, projectPath)) return null;
+    if (cwds.size === 0) return null;
+    const matched = [...cwds].some((c) => this.cwdMatches(c, projectPath));
+    if (!matched) return null;
 
     const id = sessionId ?? path.basename(filePath, ".jsonl");
     const sizeBytes = await getFileSize(filePath);
