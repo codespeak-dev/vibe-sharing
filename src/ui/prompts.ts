@@ -130,12 +130,7 @@ export async function promptUploadMetadata(
     }
   }
 
-  let repoUrl = "";
-  if (detectedRepoUrl) {
-    repoUrl = detectedRepoUrl;
-  } else {
-    repoUrl = await input({ message: "Repo URL (optional):" });
-  }
+  const repoUrl = detectedRepoUrl ?? "";
 
   return {
     ...(userEmail && { userEmail }),
