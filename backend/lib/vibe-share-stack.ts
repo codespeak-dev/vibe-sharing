@@ -397,6 +397,7 @@ export class VibeShareStack extends cdk.Stack {
     for (const [name, fn] of [
       ["Presign", presignFn],
       ["Confirm", confirmFn],
+      ["SlackNotify", slackNotifyFn],
     ] as const) {
       const alarm = new cloudwatch.Alarm(this, `${name}ErrorAlarm`, {
         metric: fn.metricErrors({ period: cdk.Duration.minutes(5) }),

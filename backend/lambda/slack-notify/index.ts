@@ -54,6 +54,22 @@ interface SlackResponse {
   ts?: string;
 }
 
+const AUTH_ERRORS = new Set([
+  "missing_scope",
+  "invalid_auth",
+  "token_revoked",
+  "not_authed",
+  "account_inactive",
+  "token_expired",
+]);
+
+function invalidateCacheOnAuthError(slackError: string | undefined): void {
+  if (slackError && AUTH_ERRORS.has(slackError)) {
+    cachedBotToken = undefined;
+    tokenCachedAt = 0;
+  }
+}
+
 async function slackPostMessage(
   channel: string,
   text: string,
@@ -73,7 +89,10 @@ async function slackPostMessage(
   });
 
   const data = (await res.json()) as SlackResponse;
-  if (!data.ok) throw new Error(`Slack chat.postMessage failed: ${data.error}`);
+  if (!data.ok) {
+    invalidateCacheOnAuthError(data.error);
+    throw new Error(`Slack chat.postMessage failed: ${data.error}`);
+  }
   return data.ts!;
 }
 
@@ -93,7 +112,10 @@ async function slackUpdateMessage(
   });
 
   const data = (await res.json()) as SlackResponse;
-  if (!data.ok) throw new Error(`Slack chat.update failed: ${data.error}`);
+  if (!data.ok) {
+    invalidateCacheOnAuthError(data.error);
+    throw new Error(`Slack chat.update failed: ${data.error}`);
+  }
 }
 
 // ─── DynamoDB thread tracking ───
