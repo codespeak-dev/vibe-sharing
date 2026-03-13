@@ -97,8 +97,8 @@ export async function run(options: CliOptions): Promise<void> {
         bundlePath: projectState.bundlePath,
       };
 
-      // Count: text files + bundle + untracked files
-      projectFileCount = 4 + 1 + selectedUntracked.length;
+      // Count: text files + bundle (if present) + untracked files
+      projectFileCount = 4 + (projectState.bundlePath ? 1 : 0) + selectedUntracked.length;
 
       displayGitProjectSummary(selectedUntracked.length);
     } else {
@@ -210,7 +210,7 @@ export async function run(options: CliOptions): Promise<void> {
       isGitRepo: projectState.isGitRepo,
       gitBranch: projectState.isGitRepo ? projectState.branch : undefined,
       gitCommit: projectState.isGitRepo ? projectState.commit : undefined,
-      hasBundle: projectState.isGitRepo ? true : undefined,
+      hasBundle: projectState.isGitRepo ? !!projectState.bundlePath : undefined,
       untrackedFileCount: projectState.isGitRepo
         ? projectState.untrackedFiles.length
         : undefined,

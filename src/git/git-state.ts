@@ -19,7 +19,7 @@ export interface GitState {
   gitDiffStagedOutput: string;
   fileListing: string;
   untrackedFiles: string[];
-  bundlePath: string;
+  bundlePath: string | null;
 }
 
 export interface NonGitState {
@@ -63,16 +63,21 @@ async function gitLines(
  * Create a git bundle containing all refs.
  * Returns the absolute path to the bundle file in a temp directory.
  */
-async function createGitBundle(cwd: string): Promise<string> {
+async function createGitBundle(cwd: string): Promise<string | null> {
   const bundlePath = path.join(
     os.tmpdir(),
     `codespeak-bundle-${Date.now()}.bundle`,
   );
-  await execFileAsync("git", ["bundle", "create", bundlePath, "--all"], {
-    cwd,
-    maxBuffer: 50 * 1024 * 1024,
-  });
-  return bundlePath;
+  try {
+    await execFileAsync("git", ["bundle", "create", bundlePath, "--all"], {
+      cwd,
+      maxBuffer: 50 * 1024 * 1024,
+    });
+    return bundlePath;
+  } catch {
+    // Bundle creation can fail for repos with no commits/refs
+    return null;
+  }
 }
 
 /**

@@ -13,7 +13,7 @@ export interface GitProjectInput {
   gitDiffStagedOutput: string;
   fileListing: string;
   untrackedFiles: string[];
-  bundlePath: string;
+  bundlePath: string | null;
 }
 
 export interface NonGitProjectInput {
@@ -210,11 +210,13 @@ function addGitProject(
     name: "project/file-listing.txt",
   });
 
-  // Git bundle
-  try {
-    archive.file(project.bundlePath, { name: "project/repo.bundle" });
-  } catch {
-    // Bundle may not exist if git bundle failed
+  // Git bundle (may be null if repo has no commits)
+  if (project.bundlePath) {
+    try {
+      archive.file(project.bundlePath, { name: "project/repo.bundle" });
+    } catch {
+      // Bundle may not exist if git bundle failed
+    }
   }
 
   // Untracked files
