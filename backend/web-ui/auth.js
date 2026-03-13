@@ -26,6 +26,7 @@ async function redirectToLogin() {
   const codeChallenge = await generateCodeChallenge(codeVerifier);
 
   sessionStorage.setItem("pkce_code_verifier", codeVerifier);
+  sessionStorage.setItem("return_url", window.location.href);
 
   const params = new URLSearchParams({
     response_type: "code",

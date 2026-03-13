@@ -50,6 +50,14 @@ export class VibeShareStack extends cdk.Stack {
       pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
     });
 
+    // ─── Slack Threads Table ───
+    const slackThreadsTable = new dynamodb.Table(this, "SlackThreadsTable", {
+      partitionKey: { name: "groupKey", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      timeToLiveAttribute: "expiresAt",
+    });
+
     // ─── Cognito User Pool ───
     const userPool = new cognito.UserPool(this, "WebUiUserPool", {
       selfSignUpEnabled: true,
@@ -176,6 +184,22 @@ export class VibeShareStack extends cdk.Stack {
       })
     );
 
+    // ─── List Slack Threads Lambda ───
+    const listSlackThreadsFn = new lambdaNode.NodejsFunction(this, "ListSlackThreadsFunction", {
+      runtime: lambda.Runtime.NODEJS_20_X,
+      architecture: lambda.Architecture.ARM_64,
+      memorySize: 128,
+      timeout: cdk.Duration.seconds(10),
+      entry: path.join(lambdaDir, "list-slack-threads", "index.ts"),
+      handler: "handler",
+      environment: {
+        SLACK_THREADS_TABLE_NAME: slackThreadsTable.tableName,
+      },
+      bundling: { minify: true, sourceMap: true },
+    });
+
+    slackThreadsTable.grant(listSlackThreadsFn, "dynamodb:Scan");
+
     // ─── Health Lambda ───
     const healthFn = new lambdaNode.NodejsFunction(this, "HealthFunction", {
       ...sharedProps,
@@ -238,6 +262,16 @@ export class VibeShareStack extends cdk.Stack {
       integration: new apigatewayv2Integrations.HttpLambdaIntegration(
         "ListUploadsIntegration",
         listUploadsFn
+      ),
+      authorizer: jwtAuthorizer,
+    });
+
+    api.addRoutes({
+      path: "/api/v1/slack-threads",
+      methods: [apigatewayv2.HttpMethod.GET],
+      integration: new apigatewayv2Integrations.HttpLambdaIntegration(
+        "ListSlackThreadsIntegration",
+        listSlackThreadsFn
       ),
       authorizer: jwtAuthorizer,
     });
@@ -319,27 +353,37 @@ export class VibeShareStack extends cdk.Stack {
       new snsSubscriptions.EmailSubscription(config.alarmEmail)
     );
 
-    // Slack notification Lambda (reads webhook URL from SSM at runtime)
-    const slackWebhookParam = ssm.StringParameter.fromSecureStringParameterAttributes(
+    // Slack notification Lambda (uses Slack Web API for threading)
+    const slackBotTokenParam = ssm.StringParameter.fromSecureStringParameterAttributes(
       this,
-      "SlackWebhookParam",
-      { parameterName: config.slackWebhookSsmParam }
+      "SlackBotTokenParam",
+      { parameterName: config.slackBotTokenSsmParam }
+    );
+    const slackChannelIdParam = ssm.StringParameter.fromStringParameterAttributes(
+      this,
+      "SlackChannelIdParam",
+      { parameterName: config.slackChannelIdSsmParam }
     );
 
     const slackNotifyFn = new lambdaNode.NodejsFunction(this, "SlackNotifyFunction", {
       runtime: lambda.Runtime.NODEJS_20_X,
       architecture: lambda.Architecture.ARM_64,
       memorySize: 128,
-      timeout: cdk.Duration.seconds(10),
+      timeout: cdk.Duration.seconds(15),
       entry: path.join(lambdaDir, "slack-notify", "index.ts"),
       handler: "handler",
       environment: {
-        SLACK_WEBHOOK_SSM_PARAM: config.slackWebhookSsmParam,
+        SLACK_BOT_TOKEN_SSM_PARAM: config.slackBotTokenSsmParam,
+        SLACK_CHANNEL_ID_SSM_PARAM: config.slackChannelIdSsmParam,
+        SLACK_THREADS_TABLE_NAME: slackThreadsTable.tableName,
+        ADMIN_UI_URL: config.adminUiUrl,
       },
       bundling: { minify: true, sourceMap: true },
     });
 
-    slackWebhookParam.grantRead(slackNotifyFn);
+    slackBotTokenParam.grantRead(slackNotifyFn);
+    slackChannelIdParam.grantRead(slackNotifyFn);
+    slackThreadsTable.grantReadWriteData(slackNotifyFn);
     alarmTopic.addSubscription(
       new snsSubscriptions.LambdaSubscription(slackNotifyFn)
     );

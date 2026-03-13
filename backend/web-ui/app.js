@@ -21,6 +21,21 @@ async function fetchUploads() {
   return data.uploads;
 }
 
+async function fetchSlackThreads() {
+  const cfg = getConfig();
+  const token = getIdToken();
+
+  const response = await fetch(`${cfg.apiBaseUrl}/api/v1/slack-threads`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (response.status === 401) return [];
+  if (!response.ok) throw new Error(`API error: ${response.status}`);
+
+  const data = await response.json();
+  return data.threads;
+}
+
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -28,7 +43,7 @@ function formatSize(bytes) {
 }
 
 function formatDate(isoStr) {
-  if (!isoStr) return "—";
+  if (!isoStr) return "\u2014";
   const d = new Date(isoStr);
   return d.toLocaleDateString("en-US", {
     year: "numeric",
@@ -53,7 +68,7 @@ function renderUploads(uploads) {
   tbody.innerHTML = uploads
     .map(
       (u) => `
-    <tr>
+    <tr data-upload-id="${escapeHtml(u.uploadId)}">
       <td>${escapeHtml(u.filename)}</td>
       <td>${formatSize(u.sizeBytes)}</td>
       <td>${formatUser(u)}</td>
@@ -65,8 +80,31 @@ function renderUploads(uploads) {
     .join("");
 }
 
+function renderSlackThreads(threads) {
+  const tbody = document.getElementById("threads-body");
+  const section = document.getElementById("slack-threads-section");
+
+  if (!threads || threads.length === 0) {
+    section.style.display = "none";
+    return;
+  }
+
+  section.style.display = "block";
+  tbody.innerHTML = threads
+    .map(
+      (t) => `
+    <tr>
+      <td>${escapeHtml(t.groupKey)}</td>
+      <td>${escapeHtml(t.channel)}</td>
+      <td>${formatDate(t.createdAt)}</td>
+      <td>${t.expiresAt ? formatDate(new Date(t.expiresAt * 1000).toISOString()) : "\u2014"}</td>
+    </tr>`
+    )
+    .join("");
+}
+
 function formatUser(u) {
-  const name = u.userName || u.userEmail || "—";
+  const name = u.userName || u.userEmail || "\u2014";
   if (u.userEmail) {
     return `<a href="mailto:${escapeHtml(u.userEmail)}" class="download-link">${escapeHtml(name)}</a>`;
   }
@@ -74,17 +112,8 @@ function formatUser(u) {
 }
 
 function formatRepoUrl(raw) {
-  if (!raw) return "—";
+  if (!raw) return "\u2014";
 
-  // Try to extract user/repo from any GitHub URL form:
-  //   git@github.com:user/repo.git
-  //   ssh://git@github.com/user/repo
-  //   git+ssh://git@github.com/user/repo.git
-  //   git://github.com/user/repo.git
-  //   git+https://github.com/user/repo.git
-  //   https://github.com/user/repo.git
-  //   http://github.com/user/repo
-  //   github.com/user/repo
   const patterns = [
     /^(?:git@|ssh:\/\/git@|git\+ssh:\/\/git@)github\.com[:/](.+?)(?:\.git)?\/?$/,
     /^(?:git\+https?:\/\/|git:\/\/|https?:\/\/)github\.com\/(.+?)(?:\.git)?\/?$/,
@@ -102,7 +131,6 @@ function formatRepoUrl(raw) {
     }
   }
 
-  // Non-GitHub URL: show as clickable link
   if (raw.match(/^https?:\/\//)) {
     return `<a href="${escapeHtml(raw)}" class="download-link" target="_blank">${escapeHtml(raw)}</a>`;
   }
@@ -116,6 +144,32 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// ─── Auto-download from ?download= param ───
+
+function handleAutoDownload(uploads) {
+  const params = new URLSearchParams(window.location.search);
+  const downloadId = params.get("download");
+  if (!downloadId) return;
+
+  const upload = uploads.find((u) => u.uploadId === downloadId);
+  if (upload && upload.downloadUrl) {
+    // Trigger download
+    const a = document.createElement("a");
+    a.href = upload.downloadUrl;
+    a.download = upload.filename || "";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  // Clear the query param
+  const url = new URL(window.location.href);
+  url.searchParams.delete("download");
+  history.replaceState(null, "", url.pathname + url.search);
+}
+
+// ─── Init ───
+
 async function init() {
   if (!isLoggedIn()) {
     redirectToLogin();
@@ -123,13 +177,13 @@ async function init() {
   }
 
   document.getElementById("logout-btn").addEventListener("click", logout);
-  document.getElementById("refresh-btn").addEventListener("click", loadUploads);
+  document.getElementById("refresh-btn").addEventListener("click", loadAll);
   document.getElementById("app").style.display = "block";
 
-  await loadUploads();
+  await loadAll();
 }
 
-async function loadUploads() {
+async function loadAll() {
   const loading = document.getElementById("loading");
   const error = document.getElementById("error");
 
@@ -137,10 +191,15 @@ async function loadUploads() {
   error.style.display = "none";
 
   try {
-    const uploads = await fetchUploads();
+    const [uploads, threads] = await Promise.all([
+      fetchUploads(),
+      fetchSlackThreads(),
+    ]);
     renderUploads(uploads);
+    renderSlackThreads(threads);
+    handleAutoDownload(uploads);
   } catch (err) {
-    error.textContent = `Failed to load uploads: ${err.message}`;
+    error.textContent = `Failed to load data: ${err.message}`;
     error.style.display = "block";
   } finally {
     loading.style.display = "none";

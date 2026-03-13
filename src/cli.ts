@@ -297,12 +297,12 @@ export async function run(options: CliOptions): Promise<void> {
         const metadata = await promptUploadMetadata(detectedRepoUrl);
 
         const uploadSpinner = ora("Uploading...").start();
-        const { shareUrl } = await uploadArchive(zipPath, sizeBytes, (pct) => {
+        await uploadArchive(zipPath, sizeBytes, (pct) => {
           uploadSpinner.text = `Uploading... ${pct}%`;
         }, metadata);
         uploadSpinner.succeed("Upload complete");
 
-        showPostUploadInfo(shareUrl);
+        showPostUploadInfo();
       }
     }
   } catch (err) {

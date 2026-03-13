@@ -3,10 +3,17 @@ export const config = {
 
   alarmEmail: "a+alarms@codespeak.dev",
 
-  // SSM parameter name containing the Slack incoming webhook URL.
-  // Create it before deploying:
-  //   aws ssm put-parameter --name /vibe-share/slack-webhook-url --type SecureString --value "https://hooks.slack.com/services/..."
+  // SSM parameter name containing the Slack incoming webhook URL (legacy, kept for alarm fallback).
   slackWebhookSsmParam: "/vibe-share/slack-webhook-url",
+
+  // SSM parameter names for Slack Web API (used for threaded upload notifications).
+  // Create before deploying:
+  //   aws ssm put-parameter --name /vibe-share/slack-bot-token --type SecureString --value "xoxb-..."
+  //   aws ssm put-parameter --name /vibe-share/slack-channel-id --type String --value "C0XXXXXXX"
+  slackBotTokenSsmParam: "/vibe-share/slack-bot-token",
+  slackChannelIdSsmParam: "/vibe-share/slack-channel-id",
+
+  adminUiUrl: "https://admin.vibe-share.codespeak.dev",
 
   // Cognito hosted UI domain prefix.
   // The full domain will be: <prefix>.auth.<region>.amazoncognito.com

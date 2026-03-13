@@ -1,6 +1,5 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda";
-import { S3Client, HeadObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { S3Client, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { ok, badRequest, notFound, serverError } from "../shared/response";
@@ -12,7 +11,6 @@ const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
 const BUCKET_NAME = process.env.BUCKET_NAME!;
 const TABLE_NAME = process.env.TABLE_NAME!;
-const DOWNLOAD_URL_EXPIRY = 7 * 24 * 60 * 60; // 7 days in seconds
 
 export async function handler(
   event: APIGatewayProxyEventV2
@@ -38,9 +36,9 @@ export async function handler(
 
     const record = Item as UploadRecord;
 
-    // Idempotent: if already confirmed, return a fresh presigned URL
+    // Idempotent: if already confirmed, just return success
     if (record.status === "confirmed") {
-      return ok({ shareUrl: await buildDownloadUrl(record.s3Key, record.filename) });
+      return ok({ uploadId: record.uploadId });
     }
 
     // ─── Verify S3 object exists ───
@@ -53,10 +51,17 @@ export async function handler(
       );
     } catch (s3Err) {
       console.error("HeadObject failed:", s3Err);
-      await notifyUploadEvent(
-        "Upload failed",
-        `File not found in S3\nUpload ID: ${record.uploadId}\nFile: ${record.filename}\nError: ${s3Err}`
-      );
+      await notifyUploadEvent({
+        eventType: "confirm-failed",
+        uploadId: record.uploadId,
+        filename: record.filename,
+        sizeMB: (record.sizeBytes / 1024 / 1024).toFixed(1),
+        userName: record.userName,
+        userEmail: record.userEmail,
+        repoUrl: record.repoUrl,
+        sourceIp: record.sourceIp,
+        error: `File not found in S3: ${s3Err}`,
+      });
       return badRequest("File not uploaded yet");
     }
 
@@ -74,15 +79,18 @@ export async function handler(
       })
     );
 
-    const shareUrl = await buildDownloadUrl(record.s3Key, record.filename);
+    await notifyUploadEvent({
+      eventType: "confirm",
+      uploadId: record.uploadId,
+      filename: record.filename,
+      sizeMB: (record.sizeBytes / 1024 / 1024).toFixed(1),
+      userName: record.userName,
+      userEmail: record.userEmail,
+      repoUrl: record.repoUrl,
+      sourceIp: record.sourceIp,
+    });
 
-    const sizeMB = (record.sizeBytes / 1024 / 1024).toFixed(1);
-    await notifyUploadEvent(
-      "Upload confirmed",
-      `File: ${record.filename} (${sizeMB} MB)\nUpload ID: ${record.uploadId}`
-    );
-
-    return ok({ shareUrl });
+    return ok({ uploadId: record.uploadId });
   } catch (err) {
     console.error("Confirm error:", err);
     if (err instanceof SyntaxError) {
@@ -90,13 +98,4 @@ export async function handler(
     }
     return serverError("Internal server error");
   }
-}
-
-async function buildDownloadUrl(s3Key: string, filename: string): Promise<string> {
-  const command = new GetObjectCommand({
-    Bucket: BUCKET_NAME,
-    Key: s3Key,
-    ResponseContentDisposition: `attachment; filename="${filename}"`,
-  });
-  return getSignedUrl(s3, command, { expiresIn: DOWNLOAD_URL_EXPIRY });
 }

@@ -90,11 +90,16 @@ export async function handler(
       })
     );
 
-    const sizeMB = (body.sizeBytes / 1024 / 1024).toFixed(1);
-    await notifyUploadEvent(
-      "New upload requested",
-      `File: ${sanitizedFilename} (${sizeMB} MB)\nUpload ID: ${uploadId}\nIP: ${sourceIp}${body.userName ? `\nUser: ${body.userName}` : ""}${body.repoUrl ? `\nRepo: ${body.repoUrl}` : ""}`
-    );
+    await notifyUploadEvent({
+      eventType: "presign",
+      uploadId,
+      filename: sanitizedFilename,
+      sizeMB: (body.sizeBytes / 1024 / 1024).toFixed(1),
+      userName: body.userName,
+      userEmail: body.userEmail,
+      repoUrl: body.repoUrl,
+      sourceIp,
+    });
 
     return ok({ uploadUrl, uploadId });
   } catch (err) {

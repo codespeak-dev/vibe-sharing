@@ -8,10 +8,6 @@ interface PresignResponse {
   uploadId: string;
 }
 
-interface ConfirmResponse {
-  shareUrl: string;
-}
-
 export interface UploadMetadata {
   userEmail?: string;
   userName?: string;
@@ -19,13 +15,12 @@ export interface UploadMetadata {
 }
 
 export interface UploadResult {
-  shareUrl: string;
   uploadId: string;
 }
 
 /**
  * Upload a zip file to S3 via presigned URL.
- * Returns the share URL on success.
+ * Returns the upload ID on success.
  */
 export async function uploadArchive(
   zipPath: string,
@@ -97,8 +92,8 @@ export async function uploadArchive(
       throw new Error(`Confirm failed (${response.status}): ${body}`);
     }
 
-    const result = (await response.json()) as ConfirmResponse;
-    return { shareUrl: result.shareUrl, uploadId: presign.uploadId };
+    await response.json();
+    return { uploadId: presign.uploadId };
   } catch (err) {
     if (err instanceof VibeError) throw err;
     throw uploadFailed("confirm", err);
