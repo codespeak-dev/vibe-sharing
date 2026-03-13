@@ -54,12 +54,11 @@ function renderUploads(uploads) {
     .map(
       (u) => `
     <tr>
-      <td>${escapeHtml(u.filename)}</td>
+      <td><a href="${escapeHtml(u.downloadUrl)}" class="download-link">${escapeHtml(u.filename)}</a></td>
       <td>${formatSize(u.sizeBytes)}</td>
       <td>${formatUser(u)}</td>
       <td>${formatRepoUrl(u.repoUrl)}</td>
       <td>${formatDate(u.confirmedAt || u.createdAt)}</td>
-      <td><a href="${escapeHtml(u.downloadUrl)}" class="download-link">Download</a></td>
     </tr>`
     )
     .join("");
