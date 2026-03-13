@@ -1,5 +1,8 @@
 // Fetch uploads and render the table
 
+let internalEmails = new Set();
+let allUploads = [];
+
 async function fetchUploads() {
   const cfg = getConfig();
   const token = getIdToken();
@@ -36,6 +39,41 @@ async function fetchSlackThreads() {
   return data.threads;
 }
 
+async function fetchInternalEmails() {
+  const cfg = getConfig();
+  const token = getIdToken();
+
+  const response = await fetch(`${cfg.apiBaseUrl}/api/v1/internal-emails`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (response.status === 401) return [];
+  if (!response.ok) throw new Error(`API error: ${response.status}`);
+
+  const data = await response.json();
+  return data.emails;
+}
+
+async function addInternalEmail(email) {
+  const cfg = getConfig();
+  const token = getIdToken();
+
+  const response = await fetch(`${cfg.apiBaseUrl}/api/v1/internal-emails`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ email }),
+  });
+
+  if (response.status === 401) {
+    redirectToLogin();
+    return;
+  }
+  if (!response.ok) throw new Error(`API error: ${response.status}`);
+}
+
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -52,6 +90,16 @@ function formatDate(isoStr) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function applyFilter() {
+  const showInternal = document.getElementById("show-internal").checked;
+  const filtered = showInternal
+    ? allUploads
+    : allUploads.filter(
+        (u) => !u.userEmail || !internalEmails.has(u.userEmail.toLowerCase())
+      );
+  renderUploads(filtered);
 }
 
 function renderUploads(uploads) {
@@ -106,7 +154,11 @@ function renderSlackThreads(threads) {
 function formatUser(u) {
   const name = u.userName || u.userEmail || "\u2014";
   if (u.userEmail) {
-    return `<a href="mailto:${escapeHtml(u.userEmail)}" class="download-link">${escapeHtml(name)}</a>`;
+    let html = `<a href="mailto:${escapeHtml(u.userEmail)}" class="download-link">${escapeHtml(name)}</a>`;
+    if (!internalEmails.has(u.userEmail.toLowerCase())) {
+      html += ` <button class="btn-mark-internal" data-email="${escapeHtml(u.userEmail)}">Hide</button>`;
+    }
+    return html;
   }
   return escapeHtml(name);
 }
@@ -178,6 +230,18 @@ async function init() {
 
   document.getElementById("logout-btn").addEventListener("click", logout);
   document.getElementById("refresh-btn").addEventListener("click", loadAll);
+  document.getElementById("show-internal").addEventListener("change", applyFilter);
+
+  document.getElementById("uploads-body").addEventListener("click", async (e) => {
+    if (e.target.classList.contains("btn-mark-internal")) {
+      const email = e.target.dataset.email;
+      e.target.disabled = true;
+      await addInternalEmail(email);
+      internalEmails.add(email.toLowerCase());
+      applyFilter();
+    }
+  });
+
   document.getElementById("app").style.display = "block";
 
   await loadAll();
@@ -191,11 +255,14 @@ async function loadAll() {
   error.style.display = "none";
 
   try {
-    const [uploads, threads] = await Promise.all([
+    const [uploads, threads, emails] = await Promise.all([
       fetchUploads(),
       fetchSlackThreads(),
+      fetchInternalEmails(),
     ]);
-    renderUploads(uploads);
+    internalEmails = new Set(emails.map((e) => e.toLowerCase()));
+    allUploads = uploads;
+    applyFilter();
     renderSlackThreads(threads);
     handleAutoDownload(uploads);
   } catch (err) {

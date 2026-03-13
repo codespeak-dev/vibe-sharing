@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vibe Share — Internal Emails</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app" style="display: none;">
+    <div class="header">
+      <h1>Internal Emails</h1>
+      <div class="header-actions">
+        <a href="/" class="btn">Back to Uploads</a>
+        <button id="logout-btn" class="btn">Logout</button>
+      </div>
+    </div>
+    <div class="container">
+      <div class="add-email-form">
+        <input type="email" id="new-email" placeholder="user@example.com" />
+        <button id="add-btn" class="btn-add">Add</button>
+      </div>
+      <div id="loading">Loading...</div>
+      <div id="error" style="display: none;"></div>
+      <div id="empty-state" style="display: none;">No internal emails configured.</div>
+      <table id="emails-table" style="display: none;">
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="emails-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="auth.js"></script>
+  <script src="internal-emails-app.js"></script>
+</body>
+</html>

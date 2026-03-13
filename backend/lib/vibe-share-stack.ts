@@ -58,6 +58,13 @@ export class VibeShareStack extends cdk.Stack {
       timeToLiveAttribute: "expiresAt",
     });
 
+    // ─── Internal Emails Table ───
+    const internalEmailsTable = new dynamodb.Table(this, "InternalEmailsTable", {
+      partitionKey: { name: "email", type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
     // ─── Cognito User Pool ───
     const userPool = new cognito.UserPool(this, "WebUiUserPool", {
       selfSignUpEnabled: true,
@@ -184,6 +191,17 @@ export class VibeShareStack extends cdk.Stack {
       })
     );
 
+    // ─── Internal Emails Lambda ───
+    const internalEmailsFn = new lambdaNode.NodejsFunction(this, "InternalEmailsFunction", {
+      ...sharedProps,
+      entry: path.join(lambdaDir, "internal-emails", "index.ts"),
+      handler: "handler",
+      environment: {
+        INTERNAL_EMAILS_TABLE_NAME: internalEmailsTable.tableName,
+      },
+    });
+    internalEmailsTable.grantReadWriteData(internalEmailsFn);
+
     // ─── List Slack Threads Lambda ───
     const listSlackThreadsFn = new lambdaNode.NodejsFunction(this, "ListSlackThreadsFunction", {
       runtime: lambda.Runtime.NODEJS_20_X,
@@ -223,6 +241,7 @@ export class VibeShareStack extends cdk.Stack {
         allowMethods: [
           apigatewayv2.CorsHttpMethod.POST,
           apigatewayv2.CorsHttpMethod.GET,
+          apigatewayv2.CorsHttpMethod.DELETE,
         ],
         allowHeaders: ["Content-Type", "Authorization"],
       },
@@ -273,6 +292,30 @@ export class VibeShareStack extends cdk.Stack {
         "ListSlackThreadsIntegration",
         listSlackThreadsFn
       ),
+      authorizer: jwtAuthorizer,
+    });
+
+    const internalEmailsIntegration = new apigatewayv2Integrations.HttpLambdaIntegration(
+      "InternalEmailsIntegration",
+      internalEmailsFn
+    );
+
+    api.addRoutes({
+      path: "/api/v1/internal-emails",
+      methods: [apigatewayv2.HttpMethod.GET],
+      integration: internalEmailsIntegration,
+      authorizer: jwtAuthorizer,
+    });
+    api.addRoutes({
+      path: "/api/v1/internal-emails",
+      methods: [apigatewayv2.HttpMethod.POST],
+      integration: internalEmailsIntegration,
+      authorizer: jwtAuthorizer,
+    });
+    api.addRoutes({
+      path: "/api/v1/internal-emails",
+      methods: [apigatewayv2.HttpMethod.DELETE],
+      integration: internalEmailsIntegration,
       authorizer: jwtAuthorizer,
     });
 
