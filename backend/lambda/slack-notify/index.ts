@@ -186,7 +186,7 @@ async function updateTopLevelText(
 // ─── Message formatting ───
 
 function groupKeyFor(event: UploadEvent): string {
-  return event.userEmail || event.sourceIp || "anonymous";
+  return event.uploadId;
 }
 
 function formatTopLevel(event: UploadEvent): string {
@@ -197,6 +197,7 @@ function formatTopLevel(event: UploadEvent): string {
   } else {
     parts.push(`*${name}*`);
   }
+  parts.push(`Upload: ${event.filename} (${event.sizeMB} MB)`);
   if (event.repoUrl) parts.push(event.repoUrl);
   return parts.join("\n");
 }

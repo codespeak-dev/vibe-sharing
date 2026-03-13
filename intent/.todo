@@ -1,0 +1,15 @@
+[X] undefined in download URL in CLI
+[X] Repo URL request when unavailable
+[X] Slack notifications reworked
+[] Mark some users as Internal
+[X] empty bundle bug
+[X] do we work from subfolders???
+[] deploy to npm
+[] better UI
+[] check other agents: Codex/Cline/Gemini
+  [] codex
+  [] cline
+  [] gemini
+  [] multiple in one dir
+[] step-by-step analytics
+[] secret screening
