@@ -94,6 +94,7 @@ function formatDate(isoStr) {
 
 function applyFilter() {
   const showInternal = document.getElementById("show-internal").checked;
+  localStorage.setItem("show-internal", showInternal);
   const filtered = showInternal
     ? allUploads
     : allUploads.filter(
@@ -230,6 +231,9 @@ async function init() {
   document.getElementById("logout-btn").addEventListener("click", logout);
   document.getElementById("refresh-btn").addEventListener("click", loadAll);
   document.getElementById("show-internal").addEventListener("change", applyFilter);
+  if (localStorage.getItem("show-internal") === "true") {
+    document.getElementById("show-internal").checked = true;
+  }
 
   document.getElementById("uploads-body").addEventListener("click", async (e) => {
     if (e.target.classList.contains("btn-mark-internal")) {
