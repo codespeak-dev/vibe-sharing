@@ -81,11 +81,9 @@ export async function getUploadConsent(
 /**
  * Show post-upload message with deletion instructions.
  */
-export function showPostUploadInfo(shareUrl: string): void {
+export function showPostUploadInfo(): void {
   console.log();
   console.log(chalk.green.bold("Upload complete!"));
-  console.log();
-  console.log(`Your data is available at: ${chalk.underline(shareUrl)}`);
   console.log();
   console.log(
     chalk.dim(
