@@ -1,3 +1,6 @@
+[X] email validation
+[X] password recovery
+[] better UI
 [X] undefined in download URL in CLI
 [X] Repo URL request when unavailable
 [X] Slack notifications reworked
@@ -6,14 +9,11 @@
   [X] Mark web-ui uploads from internal users 🛠️ and grey background
 [X] Mark some users as Internal
 [X] empty bundle bug
-[] webui: persist Show internal uploads in local storage
-[] do we work from subfolders???
-[] deploy to npm
-[] better UI
+[X] webui: persist Show internal uploads in local storage
 [] check other agents: Codex/Cline/Gemini
-  [] codex
-  [] cline
-  [] gemini
+  [x] codex
+  [x] cline
+  [x] gemini
   [] multiple in one dir
 [] step-by-step analytics
 [] secret screening

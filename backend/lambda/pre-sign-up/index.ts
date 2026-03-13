@@ -9,9 +9,5 @@ export async function handler(event: PreSignUpTriggerEvent): Promise<PreSignUpTr
     throw new Error(`Only @${ALLOWED_DOMAIN} email addresses are allowed to register.`);
   }
 
-  // Auto-confirm email so they don't need a separate verification step
-  event.response.autoConfirmUser = true;
-  event.response.autoVerifyEmail = true;
-
   return event;
 }
