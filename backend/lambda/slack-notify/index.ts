@@ -284,11 +284,51 @@ async function handleUploadEvent(event: UploadEvent): Promise<void> {
   }
 }
 
+interface CloudWatchAlarm {
+  AlarmName?: string;
+  AlarmDescription?: string;
+  NewStateValue?: string;
+  NewStateReason?: string;
+  StateChangeTime?: string;
+  Region?: string;
+}
+
+function formatAlarmTopLevel(alarm: CloudWatchAlarm): string {
+  const isOk = alarm.NewStateValue === "OK";
+  const icon = isOk ? ":white_check_mark:" : ":rotating_light:";
+  const state = alarm.NewStateValue ?? "UNKNOWN";
+  const description = alarm.AlarmDescription || alarm.AlarmName || "Unknown alarm";
+
+  const lines = [`${icon} *${state}: ${description}*`];
+  if (alarm.NewStateReason) lines.push(`Reason: ${alarm.NewStateReason}`);
+  if (alarm.Region) lines.push(`Region: ${alarm.Region}`);
+  if (alarm.StateChangeTime) lines.push(`Time: ${alarm.StateChangeTime}`);
+  return lines.join("\n");
+}
+
 async function handleAlarmMessage(
   subject: string,
   message: string
 ): Promise<void> {
   const channel = await getChannelId();
+
+  // Try to parse as CloudWatch alarm JSON
+  try {
+    const alarm = JSON.parse(message) as CloudWatchAlarm;
+    if (alarm.AlarmName) {
+      const topText = formatAlarmTopLevel(alarm);
+      const ts = await slackPostMessage(channel, topText);
+      await slackPostMessage(
+        channel,
+        "```\n" + JSON.stringify(alarm, null, 2) + "\n```",
+        ts
+      );
+      return;
+    }
+  } catch {
+    // Not JSON — fall through to plain text
+  }
+
   await slackPostMessage(channel, `*${subject}*\n${message}`);
 }
 
