@@ -146,6 +146,36 @@ export async function createArchive(
     }
   }
 
+  // Add virtual files (generated/filtered content from providers)
+  for (const [, { provider, sessions }] of input.sessionsByAgent) {
+    if (!provider.getVirtualFiles) continue;
+    const hasSelected = sessions.some((s) =>
+      input.selectedSessionIds.has(s.sessionId),
+    );
+    if (!hasSelected) continue;
+
+    const archiveRoot = provider.getArchiveRoot?.();
+    const archiveRootBasename = archiveRoot
+      ? path.basename(archiveRoot)
+      : provider.slug;
+
+    const virtualFiles = await provider.getVirtualFiles();
+    for (const { relativePath, content } of virtualFiles) {
+      const zipEntryPath = `sessions/${archiveRootBasename}/${relativePath.replace(/\\/g, "/")}`;
+      if (addedSessionPaths.has(zipEntryPath)) continue;
+      addedSessionPaths.add(zipEntryPath);
+
+      archive.append(content, { name: zipEntryPath });
+
+      sessionFileCount++;
+      input.onProgress?.({
+        phase: "sessions",
+        current: sessionFileCount,
+        total: totalSessionFiles,
+      });
+    }
+  }
+
   // Add per-session files (for providers without getProviderFiles)
   for (const [, { provider, sessions }] of input.sessionsByAgent) {
     for (const session of sessions) {

@@ -18,6 +18,9 @@ export const GEMINI_CONVERSATIONS_DIR = path.join(
   "conversations",
 );
 export const GEMINI_BRAIN_DIR = path.join(GEMINI_DIR, "antigravity", "brain");
+export const GEMINI_PROJECTS_FILE = path.join(GEMINI_DIR, "projects.json");
+export const GEMINI_TMP_DIR = path.join(GEMINI_DIR, "tmp");
+export const GEMINI_HISTORY_DIR = path.join(GEMINI_DIR, "history");
 
 export const CLINE_DIR = path.join(home, ".cline");
 export const CLINE_TASKS_DIR = path.join(CLINE_DIR, "data", "tasks");

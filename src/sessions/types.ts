@@ -56,4 +56,11 @@ export interface AgentProvider {
    * sessions/{basename}/. E.g. ~/.claude → sessions/.claude/projects/...
    */
   getArchiveRoot?(): string;
+
+  /**
+   * Optional: return virtual files whose content is generated/filtered
+   * rather than read from disk. These are added to the archive at the
+   * given paths (relative to sessions/{archiveRootBasename}/).
+   */
+  getVirtualFiles?(): Promise<Array<{ relativePath: string; content: string }>>;
 }
