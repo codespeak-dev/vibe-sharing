@@ -2,6 +2,7 @@ import { ClaudeCodeProvider } from "./agents/claude.js";
 import { CodexProvider } from "./agents/codex.js";
 import { GeminiProvider } from "./agents/gemini.js";
 import { ClineProvider } from "./agents/cline.js";
+import { CursorProvider } from "./agents/cursor.js";
 import type { AgentProvider, DiscoveredSession, ProjectContext } from "./types.js";
 
 export interface DiscoveryInput {
@@ -22,6 +23,7 @@ export interface DiscoveryResult {
 function getAllProviders(): AgentProvider[] {
   return [
     new ClaudeCodeProvider(),
+    new CursorProvider(),
     new CodexProvider(),
     new GeminiProvider(),
     new ClineProvider(),
