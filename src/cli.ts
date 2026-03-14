@@ -29,6 +29,7 @@ import {
 import { getGitRemoteUrl, getRepoName, getGitWorktrees } from "./utils/paths.js";
 import type { GitWorktree } from "./utils/paths.js";
 import { getDefaultExcludeDescription } from "./utils/excludes.js";
+import { getFileSize } from "./utils/fs-helpers.js";
 import { MAX_ARCHIVE_SIZE_MB } from "./config.js";
 import { VibeError, archiveTooLarge } from "./utils/errors.js";
 import type { AgentProvider, DiscoveredSession } from "./sessions/types.js";
@@ -60,6 +61,7 @@ export async function run(options: CliOptions): Promise<void> {
 
     let projectInput: ProjectInput;
     let projectFileCount: number;
+    let projectSizeEstimate = 0;
 
     // Detect repo name for archive naming (repo name > folder name)
     const detectedRepoUrl = projectState.isGitRepo
@@ -100,6 +102,19 @@ export async function run(options: CliOptions): Promise<void> {
       // Count: text files + bundle (if present) + untracked files
       projectFileCount = 4 + (projectState.bundlePath ? 1 : 0) + selectedUntracked.length;
 
+      // Estimate project file sizes
+      projectSizeEstimate =
+        Buffer.byteLength(projectState.gitStatusOutput) +
+        Buffer.byteLength(projectState.gitDiffOutput) +
+        Buffer.byteLength(projectState.gitDiffStagedOutput) +
+        Buffer.byteLength(projectState.fileListing);
+      if (projectState.bundlePath) {
+        projectSizeEstimate += await getFileSize(projectState.bundlePath);
+      }
+      for (const f of selectedUntracked) {
+        projectSizeEstimate += await getFileSize(path.join(projectState.root, f));
+      }
+
       displayGitProjectSummary(selectedUntracked.length);
     } else {
       console.log(chalk.dim("Not a git repository. Using exclude patterns."));
@@ -111,6 +126,11 @@ export async function run(options: CliOptions): Promise<void> {
         files: projectState.allFiles,
       };
       projectFileCount = projectState.allFiles.length;
+
+      // Estimate project file sizes
+      for (const f of projectState.allFiles) {
+        projectSizeEstimate += await getFileSize(path.join(projectState.root, f));
+      }
 
       displayFileList(projectState.allFiles, "Project files");
     }
@@ -168,7 +188,7 @@ export async function run(options: CliOptions): Promise<void> {
     }
 
     // Size estimate (rough — actual zip will be smaller due to compression)
-    let totalSizeEstimate = 0;
+    let totalSizeEstimate = projectSizeEstimate;
     for (const [, { sessions }] of sessionsByAgent) {
       for (const s of sessions) {
         if (selectedSessionIds.has(s.sessionId)) {
