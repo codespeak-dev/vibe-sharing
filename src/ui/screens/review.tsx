@@ -50,6 +50,10 @@ export function ReviewScreen({
       const zones: FocusZone[] = ["tabs", "content", "actions"];
       const idx = zones.indexOf(focusZone);
       setFocusZone(zones[(idx + 1) % zones.length]!);
+    } else if (key.downArrow && focusZone === "tabs") {
+      setFocusZone("content");
+    } else if (key.upArrow && focusZone === "content") {
+      setFocusZone("tabs");
     } else if (key.escape) {
       onBack();
     }
@@ -98,7 +102,7 @@ export function ReviewScreen({
             <Text color={focusZone === "content" ? "cyan" : undefined} dimColor={focusZone !== "content"}>list</Text>
             {" / "}
             <Text color={focusZone === "actions" ? "cyan" : undefined} dimColor={focusZone !== "actions"}>actions</Text>
-            {"   Esc back"}
+            {"   ↑↓ zone   Esc back"}
           </Text>
         </Box>
       )}

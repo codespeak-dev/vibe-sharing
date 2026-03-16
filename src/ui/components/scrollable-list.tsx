@@ -85,15 +85,16 @@ export function ScrollableList<T>({
       )}
       {visible.map((item, i) => {
         const realIndex = start + i;
-        const isActive = realIndex === cursor;
+        const isCurrent = realIndex === cursor;
+        const showHighlight = isCurrent && active;
         return (
           <Box key={realIndex}>
-            <Text color={isActive ? "cyan" : undefined} bold={isActive} dimColor={item.dimmed}>
-              {isActive ? ` ${indicator} ` : "   "}
+            <Text color={showHighlight ? "cyan" : undefined} bold={showHighlight} dimColor={item.dimmed || (!active && !isCurrent)}>
+              {showHighlight ? ` ${indicator} ` : "   "}
               {item.label}
             </Text>
             {item.suffix && (
-              <Text dimColor={!isActive || item.dimmed} color={isActive && !item.dimmed ? "cyan" : undefined}>
+              <Text dimColor={!showHighlight || item.dimmed} color={showHighlight && !item.dimmed ? "cyan" : undefined}>
                 {"  "}{item.suffix}
               </Text>
             )}

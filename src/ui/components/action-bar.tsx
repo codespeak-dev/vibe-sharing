@@ -34,7 +34,7 @@ export function ActionBar({ actions, active = true, onEsc }: ActionBarProps) {
   return (
     <Box marginTop={1}>
       {actions.map((action, i) => {
-        const isFocused = i === focused;
+        const isFocused = i === focused && active;
         return (
           <React.Fragment key={i}>
             {i > 0 && <Text>  </Text>}
@@ -46,7 +46,7 @@ export function ActionBar({ actions, active = true, onEsc }: ActionBarProps) {
               >
                 {" "}{action.label}{" "}
               </Text>
-            ) : action.primary ? (
+            ) : action.primary && active ? (
               <Text bold color="green">
                 {" "}{action.label}{" "}
               </Text>
