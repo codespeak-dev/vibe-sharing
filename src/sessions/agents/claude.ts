@@ -320,6 +320,32 @@ export class ClaudeCodeProvider implements AgentProvider {
     return existing;
   }
 
+  /**
+   * Extract the first user prompt from a JSONL session file.
+   * Reads only until the first user message with text content is found.
+   */
+  private async extractFirstPrompt(jsonlPath: string): Promise<string | null> {
+    try {
+      for await (const msg of readJsonl<ClaudeMessage>(jsonlPath)) {
+        if (msg.type === "user" && msg.message?.content) {
+          const textBlock = msg.message.content.find(
+            (c: unknown) =>
+              typeof c === "object" &&
+              c !== null &&
+              "type" in c &&
+              (c as { type: string }).type === "text",
+          ) as { text?: string } | undefined;
+          if (textBlock?.text) {
+            return stripIdeTags(textBlock.text).slice(0, 200);
+          }
+        }
+      }
+    } catch {
+      // Skip unreadable files
+    }
+    return null;
+  }
+
   private async scanHistory(
     projectPath: string,
   ): Promise<DiscoveredSession[]> {
@@ -352,12 +378,13 @@ export class ClaudeCodeProvider implements AgentProvider {
               this._sessionDirs.push(dirPath);
             }
             const sizeBytes = await getFileSize(jsonlPath);
+            const firstPrompt = await this.extractFirstPrompt(jsonlPath);
 
             sessions.push({
               agentName: this.name,
               sessionId: sid,
               summary: null,
-              firstPrompt: null,
+              firstPrompt,
               messageCount: null,
               created: null,
               modified: null,
