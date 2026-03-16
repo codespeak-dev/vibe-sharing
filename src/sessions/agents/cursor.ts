@@ -108,8 +108,9 @@ export class CursorProvider implements AgentProvider {
     const projects = new Map<string, number>();
 
     try {
-      // Step 1: Build a map of md5(path) → absolute path from workspace.json files
+      // Step 1: Scan workspace.json files → build hashToPath AND collect workspace dirs
       const hashToPath = new Map<string, string>();
+      const workspaceDirs: Array<{ folderPath: string; wsDir: string }> = [];
 
       if (await directoryExists(CURSOR_WORKSPACE_STORAGE_DIR)) {
         let wsEntries: import("node:fs").Dirent[];
@@ -142,12 +143,16 @@ export class CursorProvider implements AgentProvider {
 
           const hash = md5Hash(folderPath);
           hashToPath.set(hash, folderPath);
+          workspaceDirs.push({
+            folderPath,
+            wsDir: path.join(CURSOR_WORKSPACE_STORAGE_DIR, wsEntry.name),
+          });
         }
       }
 
       // Step 2: List chat directories and match against the hash map
+      let chatEntries: import("node:fs").Dirent[] = [];
       if (await directoryExists(CURSOR_CHATS_DIR)) {
-        let chatEntries: import("node:fs").Dirent[];
         try {
           chatEntries = await fs.readdir(CURSOR_CHATS_DIR, {
             withFileTypes: true,
@@ -185,6 +190,91 @@ export class CursorProvider implements AgentProvider {
               projectPath,
               (projects.get(projectPath) ?? 0) + sessionCount,
             );
+          }
+        }
+      }
+
+      // Step 2b: Recover orphaned chat dirs (no matching workspace.json)
+      // by reading workspace path from store.db blobs
+      if (this.sqliteAvailable) {
+        for (const chatEntry of chatEntries) {
+          if (!chatEntry.isDirectory()) continue;
+          if (hashToPath.has(chatEntry.name)) continue; // Already matched
+
+          const chatDir = path.join(CURSOR_CHATS_DIR, chatEntry.name);
+          let sessionEntries: import("node:fs").Dirent[];
+          try {
+            sessionEntries = await fs.readdir(chatDir, { withFileTypes: true });
+          } catch {
+            continue;
+          }
+
+          let recoveredPath: string | null = null;
+          let sessionCount = 0;
+          for (const se of sessionEntries) {
+            if (!se.isDirectory()) continue;
+            const dbPath = path.join(chatDir, se.name, "store.db");
+            if (!(await fileExists(dbPath))) continue;
+            sessionCount++;
+
+            if (!recoveredPath) {
+              try {
+                const result = await sqliteQuery(
+                  dbPath,
+                  `SELECT cast(data as text) FROM blobs WHERE cast(data as text) LIKE '%Workspace Path:%' LIMIT 1;`,
+                );
+                const match = result.match(/Workspace Path:\s*(.+?)[\n"]/);
+                if (match?.[1]) {
+                  const candidate = match[1].trim();
+                  if (await directoryExists(candidate)) {
+                    recoveredPath = candidate;
+                  }
+                }
+              } catch {
+                /* skip */
+              }
+            }
+          }
+
+          if (recoveredPath && sessionCount > 0) {
+            projects.set(
+              recoveredPath,
+              (projects.get(recoveredPath) ?? 0) + sessionCount,
+            );
+          }
+        }
+      }
+
+      // Step 3: Count Composer sessions from workspace state.vscdb
+      // Catches projects where the user used Cursor Composer but no
+      // chat sessions exist in ~/.cursor/chats/
+      if (this.sqliteAvailable) {
+        for (const { folderPath, wsDir } of workspaceDirs) {
+          if (projects.has(folderPath)) continue;
+
+          const stateDbPath = path.join(wsDir, "state.vscdb");
+          if (!(await fileExists(stateDbPath))) continue;
+
+          try {
+            const raw = await sqliteQuery(
+              stateDbPath,
+              "SELECT value FROM ItemTable WHERE key='composer.composerData';",
+            );
+            const trimmed = raw.trim();
+            if (!trimmed) continue;
+
+            const data = JSON.parse(trimmed) as {
+              allComposers?: Array<unknown>;
+            };
+            const count = data.allComposers?.length ?? 0;
+            if (count > 0) {
+              projects.set(
+                folderPath,
+                (projects.get(folderPath) ?? 0) + count,
+              );
+            }
+          } catch {
+            continue;
           }
         }
       }
