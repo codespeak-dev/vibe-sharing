@@ -169,6 +169,7 @@ export function App({ initialScreen, projects: initialProjects, onDiscoverProjec
         <ShareProjectScreen
           projectPath={screen.projectPath}
           projects={projects}
+          showHeader={state.history.length === 0}
           onShare={() => dispatch({ type: "GO_CONSENT", projectPath: screen.projectPath })}
           onReview={() => dispatch({ type: "GO_REVIEW", projectPath: screen.projectPath })}
           onBack={() => dispatch({ type: "BACK" })}

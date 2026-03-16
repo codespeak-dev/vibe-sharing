@@ -2,13 +2,16 @@ import React, { useState, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import os from "node:os";
 import type { DiscoveredProject } from "../../sessions/types.js";
+import { Header } from "../components/header.js";
 import { KeyHint } from "../components/key-hint.js";
 import { getGitRemoteUrl } from "../../utils/paths.js";
 import { getProjectStats, type ProjectStats } from "../../utils/project-stats.js";
+import { getFirstName } from "../../utils/user-info.js";
 
 interface ShareProjectScreenProps {
   projectPath: string;
   projects: DiscoveredProject[];
+  showHeader?: boolean;
   onShare: () => void;
   onReview: () => void;
   onBack: () => void;
@@ -24,6 +27,7 @@ function shortenPath(p: string): string {
 export function ShareProjectScreen({
   projectPath,
   projects,
+  showHeader = false,
   onShare,
   onReview,
   onBack,
@@ -31,6 +35,7 @@ export function ShareProjectScreen({
   const [stats, setStats] = useState<ProjectStats | null>(null);
   const [repoUrl, setRepoUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [firstName, setFirstName] = useState<string | null>(null);
 
   const project = projects.find((p) => p.path === projectPath);
 
@@ -40,17 +45,19 @@ export function ShareProjectScreen({
     Promise.all([
       getProjectStats(projectPath),
       getGitRemoteUrl(projectPath).catch(() => null),
-    ]).then(([s, url]) => {
+      showHeader ? getFirstName() : Promise.resolve(null),
+    ]).then(([s, url, name]) => {
       if (cancelled) return;
       setStats(s);
       setRepoUrl(url);
+      setFirstName(name);
       setLoading(false);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [projectPath]);
+  }, [projectPath, showHeader]);
 
   useInput((input, key) => {
     if (key.escape) {
@@ -64,6 +71,7 @@ export function ShareProjectScreen({
 
   return (
     <Box flexDirection="column">
+      {showHeader && <Header firstName={firstName} />}
       <Text bold color="cyan">
         Project: {shortenPath(projectPath)}
       </Text>
