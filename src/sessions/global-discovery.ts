@@ -78,9 +78,13 @@ export async function discoverAllProjects(): Promise<GlobalDiscoveryResult> {
     }
   }
 
-  // Sort by path for stable display
+  // Sort by total session count (descending) so most active projects appear first
   const projects = [...projectMap.values()]
-    .sort((a, b) => a.path.localeCompare(b.path))
+    .sort((a, b) => {
+      const totalA = Object.values(a.sessionCounts).reduce((sum, n) => sum + n, 0);
+      const totalB = Object.values(b.sessionCounts).reduce((sum, n) => sum + n, 0);
+      return totalB - totalA;
+    })
     .map((p) => ({
       path: p.path,
       agents: p.agents,
