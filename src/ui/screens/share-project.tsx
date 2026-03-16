@@ -172,6 +172,7 @@ export function ShareProjectScreen({
         ]}
         onEsc={onAllProjects}
       />
+      <Text dimColor>  {"←→"} navigate   Enter select   Esc back</Text>
     </Box>
   );
 }
