@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
 import { ScrollableList, type ListItem } from "../../components/scrollable-list.js";
+import { Spinner } from "../../components/spinner.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -20,6 +21,7 @@ interface BranchInfo {
 export function GitTab({ projectPath, active = true, onBoundary }: GitTabProps) {
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingStatus, setLoadingStatus] = useState("Loading git info...");
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
 
   useEffect(() => {
@@ -44,7 +46,10 @@ export function GitTab({ projectPath, active = true, onBoundary }: GitTabProps) 
 
         // Get recent commits for each branch (up to 20)
         const results: BranchInfo[] = [];
-        for (const name of branchNames) {
+        for (let bi = 0; bi < branchNames.length; bi++) {
+          const name = branchNames[bi]!;
+          if (cancelled) return;
+          setLoadingStatus(`Loading branch ${bi + 1} of ${branchNames.length}...`);
           try {
             const { stdout: logOut } = await execFileAsync(
               "git",
@@ -75,7 +80,7 @@ export function GitTab({ projectPath, active = true, onBoundary }: GitTabProps) 
     };
   }, [projectPath]);
 
-  if (loading) return <Text dimColor>Loading git info...</Text>;
+  if (loading) return <Spinner label={loadingStatus} />;
 
   if (branches.length === 0) {
     return <Text dimColor>No branches found.</Text>;

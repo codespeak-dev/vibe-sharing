@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Box, Text, useInput, useStdout } from "ink";
 import { buildFileTree, type FileTreeNode } from "../../../utils/file-tree.js";
 import { FilePreview } from "../../components/file-preview.js";
+import { Spinner } from "../../components/spinner.js";
 import path from "node:path";
 
 interface CodeTabProps {
@@ -97,7 +98,7 @@ export function CodeTab({ projectPath, active = true, onPreviewChange, onBoundar
     }
   }, { isActive: active || !!previewFile });
 
-  if (loading) return <Text dimColor>Loading file tree...</Text>;
+  if (loading) return <Spinner label="Loading file tree..." />;
 
   if (previewFile) {
     return (

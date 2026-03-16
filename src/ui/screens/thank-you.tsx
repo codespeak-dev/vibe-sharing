@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import { GooseDecoration } from "../components/goose-decoration.js";
+import { Spinner } from "../components/spinner.js";
 import { KeyHint } from "../components/key-hint.js";
 import { CONTACT_EMAIL } from "../../config.js";
 import { detectProjectFiles, cleanupBundle } from "../../git/git-state.js";
@@ -247,7 +248,7 @@ export function ThankYouScreen({
       <Box flexDirection="row">
         <GooseDecoration animate />
         <Box flexDirection="column" justifyContent="center">
-          <Text>{status}</Text>
+          {progress > 0 ? <Text>{status}</Text> : <Spinner label={status} />}
           {progress > 0 && (
             <Box marginTop={1}>
               <Text>

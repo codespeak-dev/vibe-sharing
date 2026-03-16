@@ -27,8 +27,12 @@ function getAllProviders(): AgentProvider[] {
  * Discover all projects across all AI coding agents on the system.
  * Scans each agent's data directories to find project paths and session counts.
  */
-export async function discoverAllProjects(): Promise<GlobalDiscoveryResult> {
+export async function discoverAllProjects(
+  onProgress?: (status: string) => void,
+): Promise<GlobalDiscoveryResult> {
   const providers = getAllProviders();
+
+  onProgress?.("Detecting installed agents...");
 
   // Detect which agents are installed, in parallel
   const detections = await Promise.all(
@@ -41,6 +45,8 @@ export async function discoverAllProjects(): Promise<GlobalDiscoveryResult> {
   const installedProviders = detections
     .filter((d) => d.detected)
     .map((d) => d.provider);
+
+  onProgress?.(`Found ${installedProviders.length} agents. Scanning projects...`);
 
   // Discover projects from all installed agents in parallel
   const perAgent = await Promise.all(
@@ -78,8 +84,11 @@ export async function discoverAllProjects(): Promise<GlobalDiscoveryResult> {
     }
   }
 
+  onProgress?.(`Found ${projectMap.size} projects. Merging worktrees...`);
+
   // Merge worktrees of the same repository into a single entry
   const processed = new Set<string>();
+  let mergeCount = 0;
   const mergedMap = new Map<
     string,
     { path: string; agents: string[]; sessionCounts: Record<string, number> }
@@ -88,6 +97,10 @@ export async function discoverAllProjects(): Promise<GlobalDiscoveryResult> {
   for (const [normalized, project] of projectMap) {
     if (processed.has(normalized)) continue;
     processed.add(normalized);
+    mergeCount++;
+    if (mergeCount % 10 === 0) {
+      onProgress?.(`Merging worktrees (${mergeCount}/${projectMap.size})...`);
+    }
 
     const merged = { ...project, agents: [...project.agents], sessionCounts: { ...project.sessionCounts } };
 

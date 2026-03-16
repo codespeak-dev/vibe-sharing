@@ -31,8 +31,8 @@ program
 
       startApp({
         projects: [],
-        onDiscoverProjects: async () => {
-          const result = await discoverAllProjects();
+        onDiscoverProjects: async (onProgress) => {
+          const result = await discoverAllProjects(onProgress);
           return result.projects;
         },
         initialScreen: undefined, // LoadingScreen will handle discovery + routing

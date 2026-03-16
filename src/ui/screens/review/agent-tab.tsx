@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
 import { ScrollableList, type ListItem } from "../../components/scrollable-list.js";
+import { Spinner } from "../../components/spinner.js";
 import { SessionPreview } from "../../components/session-preview.js";
 import { discoverAllSessions } from "../../../sessions/discovery.js";
 import { getGitRemoteUrl, getGitWorktrees } from "../../../utils/paths.js";
@@ -67,7 +68,7 @@ export function AgentTab({ projectPath, agentSlug, active = true, onPreviewChang
   };
 
   if (loading) {
-    return <Text dimColor>Loading sessions...</Text>;
+    return <Spinner label="Loading sessions..." />;
   }
 
   if (sessions.length === 0) {

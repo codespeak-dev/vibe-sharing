@@ -3,10 +3,11 @@ import { Box, Text } from "ink";
 import type { Screen } from "../app.js";
 import type { DiscoveredProject } from "../../sessions/types.js";
 import { GooseDecoration } from "../components/goose-decoration.js";
+import { Spinner } from "../components/spinner.js";
 import { determineRoute } from "../../routing.js";
 
 interface LoadingScreenProps {
-  onDiscoverProjects: () => Promise<DiscoveredProject[]>;
+  onDiscoverProjects: (onProgress: (status: string) => void) => Promise<DiscoveredProject[]>;
   onDone: (projects: DiscoveredProject[], route: Screen) => void;
 }
 
@@ -18,7 +19,9 @@ export function LoadingScreen({ onDiscoverProjects, onDone }: LoadingScreenProps
 
     (async () => {
       try {
-        const projects = await onDiscoverProjects();
+        const projects = await onDiscoverProjects((s) => {
+          if (!cancelled) setStatus(s);
+        });
         if (cancelled) return;
 
         setStatus("Determining route...");
@@ -47,7 +50,7 @@ export function LoadingScreen({ onDiscoverProjects, onDone }: LoadingScreenProps
         <Text color="cyan" bold>
           codespeak-vibe-share
         </Text>
-        <Text>{status}</Text>
+        <Spinner label={status} />
       </Box>
     </Box>
   );

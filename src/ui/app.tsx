@@ -114,7 +114,7 @@ function reducer(state: AppState, action: Action): AppState {
 interface AppProps {
   initialScreen?: Screen;
   projects: DiscoveredProject[];
-  onDiscoverProjects: () => Promise<DiscoveredProject[]>;
+  onDiscoverProjects: (onProgress: (status: string) => void) => Promise<DiscoveredProject[]>;
 }
 
 export function App({ initialScreen, projects: initialProjects, onDiscoverProjects }: AppProps) {
