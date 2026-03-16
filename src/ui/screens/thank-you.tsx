@@ -287,13 +287,13 @@ export function ThankYouScreen({
         <Text color="green">{empty}</Text>
         <Text color="green">{line("💛  💚  💙  💜  💖  💛  💚  💙  💜")}</Text>
         <Text color="green">{empty}</Text>
-        <Text color="green">{line(`To request deletion: ${CONTACT_EMAIL}`)}</Text>
-        <Text color="green">{empty}</Text>
         <Text color="green">{bot}</Text>
+
+        <Text dimColor>  To request deletion: {CONTACT_EMAIL}</Text>
 
         <KeyHint
           hints={[
-            { key: "Enter", label: "share another" },
+            { key: "Enter", label: "share another", primary: true },
             { key: "Q", label: "quit" },
           ]}
         />
