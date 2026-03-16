@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useStdout } from "ink";
 import fs from "node:fs/promises";
 
 interface FilePreviewProps {
@@ -18,7 +18,8 @@ export function FilePreview({
   const [lines, setLines] = useState<string[]>([]);
   const [scroll, setScroll] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const pageSize = 20;
+  const { stdout } = useStdout();
+  const pageSize = Math.max(5, (stdout.rows ?? 24) - 8);
 
   useEffect(() => {
     let cancelled = false;

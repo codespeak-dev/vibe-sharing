@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useStdout } from "ink";
 import { buildFileTree, type FileTreeNode } from "../../../utils/file-tree.js";
 import { FilePreview } from "../../components/file-preview.js";
 import path from "node:path";
@@ -49,7 +49,8 @@ export function CodeTab({ projectPath, onPreviewChange }: CodeTabProps) {
   }, [projectPath]);
 
   const flat = flattenTree(tree);
-  const pageSize = 20;
+  const { stdout } = useStdout();
+  const pageSize = Math.max(5, (stdout.rows ?? 24) - 10);
 
   const openPreview = (filePath: string) => {
     setPreviewFile(filePath);

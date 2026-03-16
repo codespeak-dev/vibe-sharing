@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useStdout } from "ink";
 
 export interface ListItem<T = string> {
   label: string;
@@ -22,13 +22,16 @@ interface ScrollableListProps<T> {
 
 export function ScrollableList<T>({
   items,
-  pageSize = 15,
+  pageSize: pageSizeProp,
   onSelect,
   onHighlight,
   onKey,
   active = true,
   indicator = ">",
 }: ScrollableListProps<T>) {
+  const { stdout } = useStdout();
+  const terminalPageSize = Math.max(5, (stdout.rows ?? 24) - 8);
+  const pageSize = pageSizeProp ?? terminalPageSize;
   const [cursor, setCursor] = useState(0);
 
   const moveCursor = useCallback(
