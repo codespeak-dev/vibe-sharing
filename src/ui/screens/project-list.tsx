@@ -66,7 +66,7 @@ export function ProjectListScreen({
   return (
     <Box flexDirection="column">
       <Header firstName={firstName} />
-      <Text bold>Discovered projects:</Text>
+      <Text bold>{sharedPaths.size > 0 ? "Share another project:" : "Discovered projects:"}</Text>
       <Box marginTop={1}>
         <ScrollableList
           items={items}
