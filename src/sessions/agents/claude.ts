@@ -182,7 +182,7 @@ export class ClaudeCodeProvider implements AgentProvider {
             agentName: this.name,
             sessionId: entry.sessionId,
             summary: entry.summary ?? null,
-            firstPrompt: entry.firstPrompt ?? null,
+            firstPrompt: entry.firstPrompt ? stripIdeTags(entry.firstPrompt) : null,
             messageCount: entry.messageCount ?? null,
             created: entry.created ?? null,
             modified: entry.modified ?? null,
@@ -245,7 +245,7 @@ export class ClaudeCodeProvider implements AgentProvider {
                   (c as { type: string }).type === "text",
               ) as { text?: string } | undefined;
               if (textBlock?.text) {
-                firstPrompt = textBlock.text.slice(0, 200);
+                firstPrompt = stripIdeTags(textBlock.text).slice(0, 200);
               }
             }
           }
@@ -377,4 +377,12 @@ export class ClaudeCodeProvider implements AgentProvider {
 
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Strip IDE context tags (e.g. <ide_selection>...</ide_selection>) from text.
+ * These are injected by VS Code/Cursor extensions and clutter the display.
+ */
+function stripIdeTags(text: string): string {
+  return text.replace(/<ide_\w+>[\s\S]*?<\/ide_\w+>/g, "").trim();
 }
