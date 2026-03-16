@@ -99,11 +99,24 @@ export class ClaudeCodeProvider implements AgentProvider {
       }
 
       // Strategy 2: Supplement from history.jsonl
+      // For projects with hyphens in path, decodeProjectPath is lossy so
+      // Strategy 1 misses them. Use encodeProjectPath (which is lossless)
+      // to find the actual session directory and count files.
       if (await fileExists(CLAUDE_HISTORY_FILE)) {
         try {
           for await (const entry of readJsonl<HistoryEntry>(CLAUDE_HISTORY_FILE)) {
             if (entry.project && !projects.has(entry.project)) {
-              projects.set(entry.project, (projects.get(entry.project) ?? 0) + 1);
+              const encoded = encodeProjectPath(entry.project);
+              const dirPath = path.join(CLAUDE_PROJECTS_DIR, encoded);
+              try {
+                const files = await fs.readdir(dirPath);
+                const jsonlCount = files.filter((f) => f.endsWith(".jsonl")).length;
+                if (jsonlCount > 0) {
+                  projects.set(entry.project, jsonlCount);
+                }
+              } catch {
+                projects.set(entry.project, 1);
+              }
             }
           }
         } catch {
