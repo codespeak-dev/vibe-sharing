@@ -35,7 +35,7 @@ export function AgentTab({ projectPath, agentSlug }: AgentTabProps) {
         // Find sessions for this agent
         for (const [name, { sessions: agentSessions }] of discovery.byAgent) {
           const slug = name.toLowerCase().replace(/\s+/g, "-");
-          if (slug === agentSlug || agentSlug.includes(slug)) {
+          if (slug === agentSlug || slug.includes(agentSlug) || agentSlug.includes(slug)) {
             setSessions(agentSessions);
             break;
           }
