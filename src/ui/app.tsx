@@ -46,7 +46,7 @@ function reducer(state: AppState, action: Action): AppState {
     case "GO_PROJECT_LIST":
       return {
         current: { kind: "project-list" },
-        history: [...state.history, state.current],
+        history: [],
       };
 
     case "SELECT_PROJECT":
