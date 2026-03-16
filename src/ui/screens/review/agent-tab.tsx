@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
 import { ScrollableList, type ListItem } from "../../components/scrollable-list.js";
+import { SessionPreview } from "../../components/session-preview.js";
 import { discoverAllSessions } from "../../../sessions/discovery.js";
 import { getGitRemoteUrl, getGitWorktrees } from "../../../utils/paths.js";
 import type { DiscoveredSession } from "../../../sessions/types.js";
@@ -14,6 +15,7 @@ interface AgentTabProps {
 export function AgentTab({ projectPath, agentSlug, onPreviewChange }: AgentTabProps) {
   const [sessions, setSessions] = useState<DiscoveredSession[]>([]);
   const [loading, setLoading] = useState(true);
+  const [previewSessionId, setPreviewSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,12 +54,33 @@ export function AgentTab({ projectPath, agentSlug, onPreviewChange }: AgentTabPr
     };
   }, [projectPath, agentSlug]);
 
+  const openPreview = (sessionId: string) => {
+    setPreviewSessionId(sessionId);
+    onPreviewChange?.(true);
+  };
+
+  const closePreview = () => {
+    setPreviewSessionId(null);
+    onPreviewChange?.(false);
+  };
+
   if (loading) {
     return <Text dimColor>Loading sessions...</Text>;
   }
 
   if (sessions.length === 0) {
     return <Text dimColor>No sessions found.</Text>;
+  }
+
+  if (previewSessionId) {
+    return (
+      <SessionPreview
+        sessionId={previewSessionId}
+        agentSlug={agentSlug}
+        projectPath={projectPath}
+        onBack={closePreview}
+      />
+    );
   }
 
   const items: ListItem<string>[] = sessions.map((s) => {
@@ -79,7 +102,7 @@ export function AgentTab({ projectPath, agentSlug, onPreviewChange }: AgentTabPr
       <Text bold>
         Sessions ({sessions.length}):
       </Text>
-      <ScrollableList items={items} />
+      <ScrollableList items={items} onSelect={openPreview} />
     </Box>
   );
 }
