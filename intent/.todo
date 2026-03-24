@@ -1,8 +1,23 @@
+[] deploy to npm
 [X] email validation
 [X] password recovery
 [X] update Node on the lambdas
 [X] better estimate file sizes 
 [] better UI
+[] consent
+[] warm and polite thank you at the end
+[] find vibe code, don’t expect the user to do it
+  [] sort by project size
+  [] show stats when open
+  [] view stats then just send
+  [] option to review details
+  [] then back the list to share another if any left
+[] post to social media
+[] email blast
+[] post to blog???
+[] do we work from subfolders???
+  [] what if sessions were run from a subfolder?
+[] what if there's no .git dir?
 [X] undefined in download URL in CLI
 [X] Repo URL request when unavailable
 [X] Slack notifications reworked
@@ -17,6 +32,16 @@
   [x] cline
   [x] gemini
   [] multiple in one dir
+[] offer users something nice
+    - statistics: sessions, user message tokens
+    - show purified intent
+    - intent-to-generated-code ratio
+    - what features you have used
+      - worktrees is a feature
+      - plan mode
+      - permissions
+    - number of todos completed
+    - 
 [] step-by-step analytics
 [] secret screening
 [X] support cursor
