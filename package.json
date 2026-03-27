@@ -20,6 +20,11 @@
     "ai-sessions",
     "sharing"
   ],
+  "author": "CodeSpeak <info@codespeak.dev> (https://codespeak.dev)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/codespeak-dev/vibe-sharing.git"
+  },
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0"
