@@ -1,8 +1,13 @@
 {
   "name": "codespeak-vibe-share",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Share your vibe-coded project and AI coding sessions",
   "type": "module",
+  "author": "Andrey Breslav <andrey.breslav@codespeak.dev>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/codespeak-dev/vibe-sharing"
+  },
   "bin": {
     "codespeak-vibe-share": "./dist/index.js"
   },
