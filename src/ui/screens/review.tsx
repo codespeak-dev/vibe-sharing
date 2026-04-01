@@ -3,7 +3,7 @@ import { Box, Text, useInput } from "ink";
 import type { DiscoveredProject } from "../../sessions/types.js";
 import { TabBar } from "../components/tab-bar.js";
 import { ActionBar } from "../components/action-bar.js";
-import { AgentTab } from "./review/agent-tab.js";
+import { SessionsTab } from "./review/sessions-tab.js";
 import { CodeTab } from "./review/code-tab.js";
 import { GitTab } from "./review/git-tab.js";
 
@@ -30,16 +30,11 @@ export function ReviewScreen({
   const [hasActivePreview, setHasActivePreview] = useState(false);
   const [focusZone, setFocusZone] = useState<FocusZone>("content");
 
-  // Build tabs: one per agent + Code + git
-  const agentTabs = (project?.agents ?? []).map((a) => {
-    const slug = Object.keys(project?.sessionCounts ?? {}).find((s) =>
-      a.toLowerCase().replace(/\s+/g, "-").includes(s),
-    ) ?? a;
-    const count = project?.sessionCounts[slug] ?? 0;
-    return { id: `agent:${slug}`, label: `${a} (${count})` };
-  });
+  // Build tabs: Sessions (if any agents) + Code + git
+  const hasAgents = (project?.agents ?? []).length > 0;
+  const totalSessions = Object.values(project?.sessionCounts ?? {}).reduce((a, b) => a + b, 0);
   const tabs = [
-    ...agentTabs,
+    ...(hasAgents ? [{ id: "sessions", label: `Sessions (${totalSessions})` }] : []),
     { id: "code", label: "Code" },
     { id: "git", label: "git" },
   ];
@@ -77,10 +72,9 @@ export function ReviewScreen({
       <Text dimColor>{"─".repeat(50)}</Text>
 
       <Box marginTop={1} flexDirection="column">
-        {activeTab.startsWith("agent:") && (
-          <AgentTab
-            projectPath={projectPath}
-            agentSlug={activeTab.replace("agent:", "")}
+        {activeTab === "sessions" && project && (
+          <SessionsTab
+            project={project}
             active={focusZone === "content" || hasActivePreview}
             onPreviewChange={setHasActivePreview}
             onBoundary={handleContentBoundary}

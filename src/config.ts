@@ -73,3 +73,7 @@ export const TOOL_VERSION = "0.1.0";
 
 export const ORG_NAME = "Codespeak";
 export const CONTACT_EMAIL = "support@codespeak.dev";
+
+/** Enable session preview tabs in the review screen. Off by default. */
+export const SESSION_PREVIEW_ENABLED =
+  process.env.VIBE_SHARING_SESSION_PREVIEW === "true";
