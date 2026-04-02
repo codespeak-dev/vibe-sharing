@@ -54,6 +54,17 @@ export function hasRenderedView(type: string): boolean {
   return KNOWN_TYPES.has(type);
 }
 
+/** Returns a display label for the badge — e.g. "tool-result" for user messages carrying tool results. */
+export function getDisplayType(entry: EntryRaw): string {
+  if (entry.type === "user") {
+    const blocks = entry.message?.content ?? [];
+    if (blocks.length > 0 && blocks.every((b) => b.type === "tool_result")) {
+      return "tool-result";
+    }
+  }
+  return entry.type ?? "unknown";
+}
+
 /** Extra text to display in the card header for certain entry types. */
 export function getHeaderExtra(entry: EntryRaw): string | null {
   if (entry.type === "ai-title" && typeof entry.aiTitle === "string") {
