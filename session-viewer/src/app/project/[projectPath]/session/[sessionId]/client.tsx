@@ -12,10 +12,10 @@ interface SessionEntry {
 }
 
 type Segment =
-  | { kind: "user"; entry: SessionEntry }
+  | { kind: "standalone"; entry: SessionEntry }
   | { kind: "group"; entries: SessionEntry[] };
 
-function groupEntries(entries: SessionEntry[]): Segment[] {
+function groupEntries(entries: SessionEntry[], highlightEntry: number | null): Segment[] {
   const segments: Segment[] = [];
   let nonUserBuf: SessionEntry[] = [];
 
@@ -27,9 +27,12 @@ function groupEntries(entries: SessionEntry[]): Segment[] {
   };
 
   for (const entry of entries) {
-    if (getDisplayType(entry.raw) === "user") {
+    const isStandalone =
+      getDisplayType(entry.raw) === "user" ||
+      entry.lineIndex === highlightEntry;
+    if (isStandalone) {
       flushBuf();
-      segments.push({ kind: "user", entry });
+      segments.push({ kind: "standalone", entry });
     } else {
       nonUserBuf.push(entry);
     }
@@ -38,9 +41,8 @@ function groupEntries(entries: SessionEntry[]): Segment[] {
   return segments;
 }
 
-function CollapsedGroup({ entries, highlightEntry }: { entries: SessionEntry[]; highlightEntry: number | null }) {
-  const containsTarget = highlightEntry != null && entries.some((e) => e.lineIndex === highlightEntry);
-  const [expanded, setExpanded] = useState(containsTarget);
+function CollapsedGroup({ entries }: { entries: SessionEntry[] }) {
+  const [expanded, setExpanded] = useState(false);
 
   if (expanded) {
     return (
@@ -92,12 +94,21 @@ export function SessionClient({
   const scrolledRef = useRef(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const loadingMoreRef = useRef(false);
-
-  // Parse #entry-N from URL hash
-  const highlightEntry = useMemo(() => {
+  const [highlightEntry, setHighlightEntry] = useState<number | null>(() => {
     if (typeof window === "undefined") return null;
     const match = window.location.hash.match(/^#entry-(\d+)$/);
     return match ? parseInt(match[1]!, 10) : null;
+  });
+
+  // Listen for same-page hash changes (e.g. clicking plan badge on session page)
+  useEffect(() => {
+    const onHashChange = () => {
+      const match = window.location.hash.match(/^#entry-(\d+)$/);
+      setHighlightEntry(match ? parseInt(match[1]!, 10) : null);
+      scrolledRef.current = false;
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
   const fetchPage = useCallback(
@@ -138,13 +149,15 @@ export function SessionClient({
     }
     if (entryLoaded) {
       scrolledRef.current = true;
-      // Wait for DOM to render the expanded group
+      // Wait for DOM to render the expanded group (two frames for React commit + paint)
       requestAnimationFrame(() => {
-        const el = document.getElementById(`entry-${highlightEntry}`);
-        if (el) {
-          el.scrollIntoView({ behavior: "smooth", block: "center" });
-          el.classList.add("ring-1", "ring-purple-500/60");
-        }
+        requestAnimationFrame(() => {
+          const el = document.getElementById(`entry-${highlightEntry}`);
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            el.classList.add("ring-1", "ring-purple-500/60");
+          }
+        });
       });
     }
   }, [highlightEntry, entries, loading, hasMore, fetchPage]);
@@ -174,7 +187,7 @@ export function SessionClient({
     return () => observer.disconnect();
   }, [hasMore, loadMore]);
 
-  const segments = useMemo(() => groupEntries(entries), [entries]);
+  const segments = useMemo(() => groupEntries(entries, highlightEntry), [entries, highlightEntry]);
 
   if (loading) {
     return (
@@ -207,10 +220,10 @@ export function SessionClient({
       </p>
       <div className="space-y-3">
         {segments.map((seg, i) =>
-          seg.kind === "user" ? (
-            <EntryCard key={seg.entry.lineIndex} entry={seg.entry} />
+          seg.kind === "standalone" ? (
+            <EntryCard key={seg.entry.lineIndex} entry={seg.entry} forceExpanded={seg.entry.lineIndex === highlightEntry} />
           ) : (
-            <CollapsedGroup key={`group-${i}`} entries={seg.entries} highlightEntry={highlightEntry} />
+            <CollapsedGroup key={`group-${i}`} entries={seg.entries} />
           ),
         )}
       </div>

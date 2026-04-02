@@ -36,9 +36,24 @@ export async function extractMetadata(
       const line = raw.trim();
       if (!line) continue;
 
-      if (!result.hasPlans && line.includes(".claude/plans/")) {
-        result.hasPlans = true;
-        result.firstPlanLineIndex = lineIndex;
+      if (!result.hasPlans && line.includes(".claude/plans/") && line.includes('"tool_use"')) {
+        try {
+          const obj = JSON.parse(line);
+          const blocks: Array<{ type: string; input?: { file_path?: string } }> =
+            obj.message?.content ?? [];
+          const planBlock = blocks.find(
+            (b) =>
+              b.type === "tool_use" &&
+              typeof b.input?.file_path === "string" &&
+              b.input.file_path.includes(".claude/plans/"),
+          );
+          if (planBlock) {
+            result.hasPlans = true;
+            result.firstPlanLineIndex = lineIndex;
+          }
+        } catch {
+          // skip
+        }
       }
 
       // Count user prompts that aren't pure tool_result messages

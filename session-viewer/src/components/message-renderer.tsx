@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Markdown from "react-markdown";
 import { stripIdeTags, truncate } from "@/lib/format";
 
 interface ContentBlock {
@@ -36,6 +37,39 @@ interface EntryRaw {
   stopReason?: string;
   timestamp?: string;
   [key: string]: unknown;
+}
+
+const PLANS_PATH_MARKER = ".claude/plans/";
+
+/** Check if a tool_use block targets a plan file. */
+function isPlanToolUse(block: ContentBlock): boolean {
+  if (block.type !== "tool_use") return false;
+  const filePath = block.input?.file_path;
+  return typeof filePath === "string" && filePath.includes(PLANS_PATH_MARKER);
+}
+
+/** Check if a tool_result block contains plan file content (from a Read). */
+function isPlanToolResult(block: ContentBlock): boolean {
+  if (block.type !== "tool_result") return false;
+  const raw = typeof block.content === "string"
+    ? block.content
+    : Array.isArray(block.content)
+      ? block.content.map((c) => (typeof c === "string" ? c : c.text ?? "")).join("")
+      : "";
+  return raw.includes(PLANS_PATH_MARKER);
+}
+
+/** Check if any content block in an entry references a plan file. */
+export function entryReferencesPlans(entry: EntryRaw): boolean {
+  const blocks = entry.message?.content ?? [];
+  return blocks.some((b) => isPlanToolUse(b) || isPlanToolResult(b));
+}
+
+/** Extract a human-readable plan name from a file path. */
+function getPlanName(filePath: string): string {
+  const idx = filePath.lastIndexOf("/");
+  const name = idx >= 0 ? filePath.slice(idx + 1) : filePath;
+  return name.replace(/\.md$/, "");
 }
 
 // Known types that have a rendered view
@@ -191,6 +225,7 @@ function ContentBlockRenderer({ block }: { block: ContentBlock }) {
     case "thinking":
       return <ThinkingBlock text={block.thinking ?? ""} />;
     case "tool_use":
+      if (isPlanToolUse(block)) return <PlanToolUseBlock block={block} />;
       return <ToolUseBlock block={block} />;
     case "tool_result":
       return <ToolResultBlock block={block} />;
@@ -264,6 +299,79 @@ function ToolUseBlock({ block }: { block: ContentBlock }) {
           {inputStr}
         </pre>
       )}
+    </div>
+  );
+}
+
+function PlanToolUseBlock({ block }: { block: ContentBlock }) {
+  const [expanded, setExpanded] = useState(true);
+  const filePath = block.input?.file_path as string;
+  const planName = getPlanName(filePath);
+  const toolName = block.name ?? "tool";
+
+  // Write: show rendered markdown content
+  if (toolName === "Write") {
+    const content = (block.input?.content as string) ?? "";
+    return (
+      <div className="border border-purple-900/50 rounded bg-purple-950/20">
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 cursor-pointer hover:bg-purple-950/30"
+        >
+          <span className="text-neutral-500">{expanded ? "v" : ">"}</span>
+          <span className="font-semibold text-purple-300">Plan: {planName}</span>
+          <span className="text-purple-400/60">write</span>
+        </button>
+        {expanded && content && (
+          <div className="px-3 pb-3 max-h-[600px] overflow-y-auto prose prose-invert prose-sm prose-purple max-w-none prose-headings:text-purple-200 prose-p:text-neutral-300 prose-li:text-neutral-300 prose-strong:text-neutral-200 prose-code:text-purple-300 prose-pre:bg-neutral-900/50">
+            <Markdown>{content}</Markdown>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Edit: show old → new
+  if (toolName === "Edit") {
+    const oldStr = (block.input?.old_string as string) ?? "";
+    const newStr = (block.input?.new_string as string) ?? "";
+    return (
+      <div className="border border-purple-900/50 rounded bg-purple-950/20">
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 cursor-pointer hover:bg-purple-950/30"
+        >
+          <span className="text-neutral-500">{expanded ? "v" : ">"}</span>
+          <span className="font-semibold text-purple-300">Plan: {planName}</span>
+          <span className="text-purple-400/60">edit</span>
+        </button>
+        {expanded && (
+          <div className="px-3 pb-3 space-y-2">
+            {oldStr && (
+              <div className="text-xs">
+                <div className="text-red-400/70 font-mono mb-0.5">- old</div>
+                <pre className="text-red-300/50 font-mono whitespace-pre-wrap break-words bg-red-950/20 rounded p-2 max-h-48 overflow-y-auto">{oldStr}</pre>
+              </div>
+            )}
+            {newStr && (
+              <div className="text-xs">
+                <div className="text-green-400/70 font-mono mb-0.5">+ new</div>
+                <pre className="text-green-300/50 font-mono whitespace-pre-wrap break-words bg-green-950/20 rounded p-2 max-h-48 overflow-y-auto">{newStr}</pre>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Read or other: just show plan name + action
+  return (
+    <div className="border border-purple-900/50 rounded bg-purple-950/20">
+      <div className="px-3 py-1.5 text-xs flex items-center gap-2">
+        <span className="font-semibold text-purple-300">Plan: {planName}</span>
+        <span className="text-purple-400/60">{toolName.toLowerCase()}</span>
+      </div>
     </div>
   );
 }

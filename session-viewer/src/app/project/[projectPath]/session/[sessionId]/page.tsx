@@ -1,9 +1,9 @@
 import path from "node:path";
-import Link from "next/link";
 import { discoverAllSessions } from "codespeak-vibe-share/sessions/discovery";
 import { decodeFromUrl } from "@/lib/urls";
 import { extractMetadata } from "@/lib/session-metadata";
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { PlanBadge } from "@/components/plan-badge";
 import { SessionStats } from "@/components/session-stats";
 import { SessionClient } from "./client";
 
@@ -51,12 +51,7 @@ export default async function SessionDetailPage({
           </span>
         )}
         {metadata.hasPlans && metadata.firstPlanLineIndex != null && (
-          <Link
-            href={`${sessionHref}#entry-${metadata.firstPlanLineIndex}`}
-            className="text-xs text-purple-300 bg-purple-900/50 rounded px-1.5 py-0.5 hover:bg-purple-900/80 transition-colors"
-          >
-            plan
-          </Link>
+          <PlanBadge entryIndex={metadata.firstPlanLineIndex} />
         )}
         <span className="text-xs text-neutral-600 font-mono">{sessionId}</span>
       </div>

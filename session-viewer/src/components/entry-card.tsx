@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { JsonViewer } from "./json-viewer";
-import { MessageRenderer, hasRenderedView, getHeaderExtra, isHeaderOnly, getCollapsedPreview, getDisplayType } from "./message-renderer";
+import { MessageRenderer, hasRenderedView, getHeaderExtra, isHeaderOnly, getCollapsedPreview, getDisplayType, entryReferencesPlans } from "./message-renderer";
 import { truncate } from "@/lib/format";
 import { formatDate } from "@/lib/format";
 
@@ -25,16 +25,21 @@ const TYPE_COLORS: Record<string, string> = {
   "tool-result": "bg-amber-900/50 text-amber-300",
 };
 
-export function EntryCard({ entry }: { entry: SessionEntry }) {
+export function EntryCard({ entry, forceExpanded }: { entry: SessionEntry; forceExpanded?: boolean }) {
   const canRender = hasRenderedView(entry.type);
   const headerOnly = isHeaderOnly(entry.raw);
   const displayType = getDisplayType(entry.raw);
-  const defaultExpanded = displayType === "user";
+  const defaultExpanded = displayType === "user" || !!forceExpanded;
   const [expanded, setExpanded] = useState(defaultExpanded);
+
+  useEffect(() => {
+    if (forceExpanded && !expanded) setExpanded(true);
+  }, [forceExpanded]); // eslint-disable-line react-hooks/exhaustive-deps
   const [view, setView] = useState<"rendered" | "raw">(canRender ? "rendered" : "raw");
   const colorClass = TYPE_COLORS[displayType] ?? "bg-neutral-800/50 text-neutral-400";
   const headerExtra = getHeaderExtra(entry.raw);
   const preview = getCollapsedPreview(entry.raw);
+  const hasPlan = entryReferencesPlans(entry.raw);
   const showBody = expanded && !(view === "rendered" && headerOnly);
 
   return (
@@ -51,6 +56,11 @@ export function EntryCard({ entry }: { entry: SessionEntry }) {
         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${colorClass}`}>
           {displayType}
         </span>
+        {hasPlan && (
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 bg-purple-900/50 text-purple-300">
+            plan
+          </span>
+        )}
         {entry.timestamp && (
           <span className="text-[10px] text-neutral-600 shrink-0">{formatDate(entry.timestamp)}</span>
         )}

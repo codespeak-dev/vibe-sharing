@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { truncate, stripIdeTags } from "@/lib/format";
 import { SessionStats } from "./session-stats";
@@ -50,13 +49,13 @@ export function SessionCard({
         <p className="text-sm leading-relaxed line-clamp-2 min-w-0">{displayText}</p>
         <div className="flex items-center gap-1 shrink-0">
           {hasPlans && firstPlanLineIndex != null && (
-            <Link
+            <a
               href={`${sessionHref}#entry-${firstPlanLineIndex}`}
               onClick={(e) => e.stopPropagation()}
               className="text-xs text-purple-300 bg-purple-900/50 rounded px-1.5 py-0.5 hover:bg-purple-900/80 transition-colors"
             >
               plan
-            </Link>
+            </a>
           )}
           <span className="text-xs text-neutral-500 bg-neutral-800 rounded px-1.5 py-0.5">
             {agentName}
