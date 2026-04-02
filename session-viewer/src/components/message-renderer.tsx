@@ -47,10 +47,37 @@ const KNOWN_TYPES = new Set([
   "queue-operation",
   "file-history-snapshot",
   "last-prompt",
+  "ai-title",
 ]);
 
 export function hasRenderedView(type: string): boolean {
   return KNOWN_TYPES.has(type);
+}
+
+/** Extra text to display in the card header for certain entry types. */
+export function getHeaderExtra(entry: EntryRaw): string | null {
+  if (entry.type === "ai-title" && typeof entry.aiTitle === "string") {
+    return entry.aiTitle;
+  }
+  if (entry.type === "file-history-snapshot") {
+    const tracked = entry.snapshot as Record<string, unknown> | undefined;
+    const backups = tracked?.trackedFileBackups as Record<string, unknown> | undefined;
+    const count = backups ? Object.keys(backups).length : 0;
+    if (count === 0) return "no files tracked";
+  }
+  return null;
+}
+
+/** Whether the rendered body should be hidden (header-only display). */
+export function isHeaderOnly(entry: EntryRaw): boolean {
+  if (entry.type === "ai-title") return true;
+  if (entry.type === "file-history-snapshot") {
+    const tracked = entry.snapshot as Record<string, unknown> | undefined;
+    const backups = tracked?.trackedFileBackups as Record<string, unknown> | undefined;
+    const count = backups ? Object.keys(backups).length : 0;
+    return count === 0;
+  }
+  return false;
 }
 
 export function MessageRenderer({ entry }: { entry: EntryRaw }) {
@@ -71,6 +98,8 @@ export function MessageRenderer({ entry }: { entry: EntryRaw }) {
       return <FileSnapshot entry={entry} />;
     case "last-prompt":
       return <LastPrompt entry={entry} />;
+    case "ai-title":
+      return null;
     default:
       return <p className="text-neutral-500 text-sm italic">No rendered view for type &quot;{type}&quot;</p>;
   }

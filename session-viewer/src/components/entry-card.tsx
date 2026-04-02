@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { JsonViewer } from "./json-viewer";
-import { MessageRenderer, hasRenderedView } from "./message-renderer";
+import { MessageRenderer, hasRenderedView, getHeaderExtra, isHeaderOnly } from "./message-renderer";
 import { formatDate } from "@/lib/format";
 
 interface SessionEntry {
@@ -20,12 +20,15 @@ const TYPE_COLORS: Record<string, string> = {
   "queue-operation": "bg-neutral-800/50 text-neutral-400",
   "file-history-snapshot": "bg-neutral-800/50 text-neutral-400",
   "last-prompt": "bg-purple-900/50 text-purple-300",
+  "ai-title": "bg-cyan-900/50 text-cyan-300",
 };
 
 export function EntryCard({ entry }: { entry: SessionEntry }) {
   const canRender = hasRenderedView(entry.type);
+  const headerOnly = isHeaderOnly(entry.raw);
   const [view, setView] = useState<"rendered" | "raw">(canRender ? "rendered" : "raw");
   const colorClass = TYPE_COLORS[entry.type] ?? "bg-neutral-800/50 text-neutral-400";
+  const headerExtra = getHeaderExtra(entry.raw);
 
   return (
     <div className="border border-neutral-800 rounded-lg overflow-hidden">
@@ -39,6 +42,9 @@ export function EntryCard({ entry }: { entry: SessionEntry }) {
         </span>
         {entry.timestamp && (
           <span className="text-[10px] text-neutral-600">{formatDate(entry.timestamp)}</span>
+        )}
+        {headerExtra && (
+          <span className="text-[10px] text-neutral-400 truncate">{headerExtra}</span>
         )}
         <div className="ml-auto flex gap-1">
           {canRender && (
@@ -67,13 +73,15 @@ export function EntryCard({ entry }: { entry: SessionEntry }) {
       </div>
 
       {/* Body */}
-      <div className="p-3">
-        {view === "rendered" ? (
-          <MessageRenderer entry={entry.raw} />
-        ) : (
-          <JsonViewer data={entry.raw} defaultCollapsed={false} />
-        )}
-      </div>
+      {!(view === "rendered" && headerOnly) && (
+        <div className="p-3">
+          {view === "rendered" ? (
+            <MessageRenderer entry={entry.raw} />
+          ) : (
+            <JsonViewer data={entry.raw} defaultCollapsed={false} />
+          )}
+        </div>
+      )}
     </div>
   );
 }
