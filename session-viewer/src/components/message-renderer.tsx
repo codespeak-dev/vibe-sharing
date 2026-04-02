@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { stripIdeTags, truncate } from "@/lib/format";
 
 interface ContentBlock {
@@ -61,7 +62,7 @@ function isPlanToolResult(block: ContentBlock): boolean {
 
 /** Check if any content block in an entry references a plan file. */
 export function entryReferencesPlans(entry: EntryRaw): boolean {
-  const blocks = entry.message?.content ?? [];
+  const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
   return blocks.some((b) => isPlanToolUse(b) || isPlanToolResult(b));
 }
 
@@ -91,8 +92,8 @@ export function hasRenderedView(type: string): boolean {
 /** Returns a display label for the badge — e.g. "tool-result" for user messages carrying tool results. */
 export function getDisplayType(entry: EntryRaw): string {
   if (entry.type === "user") {
-    const blocks = entry.message?.content ?? [];
-    if (blocks.length > 0 && blocks.every((b) => b.type === "tool_result")) {
+    const blocks = entry.message?.content;
+    if (Array.isArray(blocks) && blocks.length > 0 && blocks.every((b) => b.type === "tool_result")) {
       return "tool-result";
     }
   }
@@ -117,13 +118,13 @@ export function getHeaderExtra(entry: EntryRaw): string | null {
 export function getCollapsedPreview(entry: EntryRaw): string | null {
   switch (entry.type) {
     case "user": {
-      const blocks = entry.message?.content ?? [];
+      const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
       const text = blocks.find((b) => b.type === "text")?.text;
       if (text) return stripIdeTags(text).split("\n")[0] ?? null;
       return null;
     }
     case "assistant": {
-      const blocks = entry.message?.content ?? [];
+      const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
       const text = blocks.find((b) => b.type === "text")?.text;
       if (text) return text.split("\n")[0] ?? null;
       const tools = blocks
@@ -191,7 +192,7 @@ export function MessageRenderer({ entry }: { entry: EntryRaw }) {
 }
 
 function UserMessage({ entry }: { entry: EntryRaw }) {
-  const blocks = entry.message?.content ?? [];
+  const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
   return (
     <div className="space-y-2">
       {entry.message?.role && entry.message.role !== "user" && (
@@ -205,7 +206,7 @@ function UserMessage({ entry }: { entry: EntryRaw }) {
 }
 
 function AssistantMessage({ entry }: { entry: EntryRaw }) {
-  const blocks = entry.message?.content ?? [];
+  const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
   return (
     <div className="space-y-2">
       {entry.message?.model && (
@@ -324,7 +325,7 @@ function PlanToolUseBlock({ block }: { block: ContentBlock }) {
         </button>
         {expanded && content && (
           <div className="px-3 pb-3 max-h-[600px] overflow-y-auto prose prose-invert prose-sm prose-purple max-w-none prose-headings:text-purple-200 prose-p:text-neutral-300 prose-li:text-neutral-300 prose-strong:text-neutral-200 prose-code:text-purple-300 prose-pre:bg-neutral-900/50">
-            <Markdown>{content}</Markdown>
+            <Markdown remarkPlugins={[remarkGfm]}>{content}</Markdown>
           </div>
         )}
       </div>
