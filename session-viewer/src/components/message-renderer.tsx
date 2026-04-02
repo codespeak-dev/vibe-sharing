@@ -68,6 +68,46 @@ export function getHeaderExtra(entry: EntryRaw): string | null {
   return null;
 }
 
+/** Short preview text for collapsed card headers. */
+export function getCollapsedPreview(entry: EntryRaw): string | null {
+  switch (entry.type) {
+    case "user": {
+      const blocks = entry.message?.content ?? [];
+      const text = blocks.find((b) => b.type === "text")?.text;
+      if (text) return stripIdeTags(text).split("\n")[0] ?? null;
+      return null;
+    }
+    case "assistant": {
+      const blocks = entry.message?.content ?? [];
+      const text = blocks.find((b) => b.type === "text")?.text;
+      if (text) return text.split("\n")[0] ?? null;
+      const tools = blocks
+        .filter((b) => b.type === "tool_use")
+        .map((b) => b.name ?? "tool");
+      if (tools.length > 0) return tools.join(", ");
+      return null;
+    }
+    case "system":
+      return entry.subtype ?? null;
+    case "progress":
+      return (entry.data?.type as string) ?? null;
+    case "queue-operation":
+      return entry.operation ?? null;
+    case "file-history-snapshot": {
+      const tracked = entry.snapshot as Record<string, unknown> | undefined;
+      const backups = tracked?.trackedFileBackups as Record<string, unknown> | undefined;
+      const count = backups ? Object.keys(backups).length : 0;
+      return count === 0 ? "no files tracked" : `${count} files tracked`;
+    }
+    case "last-prompt":
+      return entry.lastPrompt?.split("\n")[0] ?? null;
+    case "ai-title":
+      return (entry.aiTitle as string) ?? null;
+    default:
+      return null;
+  }
+}
+
 /** Whether the rendered body should be hidden (header-only display). */
 export function isHeaderOnly(entry: EntryRaw): boolean {
   if (entry.type === "ai-title") return true;
