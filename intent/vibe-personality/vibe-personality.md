@@ -26,6 +26,7 @@ A good metric is
 
 ### Counts
 
+* what days of the week you are vibe coding
 * maxed out on your subscription limits
   * and how much time did you have to wait because of it
 * what models are used

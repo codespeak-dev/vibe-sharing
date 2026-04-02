@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { formatDate, formatBytes, truncate, stripIdeTags } from "@/lib/format";
+import { formatDateTime, formatTime, formatDuration, formatBytes, truncate, stripIdeTags, isSameDate } from "@/lib/format";
 
 interface SessionCardProps {
   sessionId: string;
@@ -55,7 +55,19 @@ export function SessionCard({
         {messageCount != null && (
           <span>{messageCount} {messageCount === 1 ? "msg" : "msgs"}</span>
         )}
-        {modified && <span>{formatDate(modified)}</span>}
+        {created && modified && created !== modified ? (
+          isSameDate(created, modified) ? (
+            <span>
+              {formatDateTime(created)} &rarr; {formatTime(modified)} ({formatDuration(created, modified)})
+            </span>
+          ) : (
+            <span>
+              {formatDateTime(created)} &rarr; {formatDateTime(modified)} ({formatDuration(created, modified)})
+            </span>
+          )
+        ) : created ? (
+          <span>{formatDateTime(created)}</span>
+        ) : null}
         <span>{formatBytes(sizeBytes)}</span>
       </div>
     </Link>
