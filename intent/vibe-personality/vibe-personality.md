@@ -1,74 +1,99 @@
 Vibe Personality
-
-Research what people write about types/styles of vibe coding. SOmething along the lines of
-* ratio of prompts size to code changes generated
-* time spent by agent after every prompt
-* style of messages: more requirements-oriented or "micromanaging"
-* how often unrelated tasks are mixed in the same session
-* how often the agents need guidance to discover bugs
-* how often agents' solutions are rejected/corrected
-* how often the user makes any comment on agents' plans
-* how long are agents waiting for the user's input
-* "ADHD index": how many sessions run in parallel
-* what features are used: AGENTS.md, plan mode, worktrees, MCP, RAG, skills, hooks, subagents, etc
-* do the agents run tests, linters etc
-* what routine tasks the user delegates to agents: generating tests, resolving merge conflicts, setup tasks, "manual" testing, research, etc
-* session lengths in messages and time (measure of agentic autonomy)
-* project sizes
-* what models are used
-* how much thinking does the agent do
-* how much grepping
-* what style of permission management: skip all, confirm edits, etc
-* asked agent to refactor, clean up vibe code, remove duplication
-* how much agents poke around in the code
-
-
+================
 
 Your vibe-coding personality test
 
+# Raw metrics
 
+A good metric is
+- computable from available inputs
+  - agent sessions & plans
+  - code
+  - git history
+- either deterministic & numeric OR if it's not deterministic then it's qualitative
+- interpretable: a given value can give the user a clear idea what it represents
 
-Traits:
+## Candidate metrics
 
-* bravery: how you deal with permissions (always click yes?)
+### Ratios/percentages
 
-* multitasking/ADHD: sessions in parallel, switching topic within a session, number of abandoned sessions (agent is still waiting for input)
-
+* Prompting Efficiency: ratio of prompts size to code changes generated
+* Autonomy: time spent by agent after every prompt until blocking on waiting for user's input
+* Impatience: how often does the user interrupt agent's actions (instances per time unit and per user messages)
+* Agent Efficiency: how often agents' solutions are rejected/corrected
+* % of choosing not the first option on questions/permissions
 * overnight toil: how many sessions run into the night/are finished at the end of the day
 
-* thoughfulness: reviewing plans and code, giving feedback
-
-* spend: what models, subscription/API key
-
-* best practices: tests, linters, etc
-
-* team vs solo (lone wolf/indy hacker)
-
-* security mindset: secrets in agent sessions
-
-* delivery: have you deployed anything?
-
-* do you swear at the agent? do you say good job or thank you? do you address the agent as bro, bruh or dog? do you say lol? are you dumb? can we detect a rage quit?
-
-* OCD: correcting typos that don't change anything
-
-* writing essays in your prompts
-
-* skill hoarder: how many of your tools/skills you are actually using
-
-* how often you commit? do you commit yourself or ask claude?
-
-* does the agent debug for you?
-
-* are your prompts longer than the actual commands?
-
-* non-code topics: life advice, or non-work stuff
-
-* power user: /compact, and other commands, etc
+### Counts
 
 * maxed out on your subscription limits
+  * and how much time did you have to wait because of it
+* what models are used
+  * were they the latest at the time?
+  * spend: what models, subscription/API key
+* what style of permission management: skip all, confirm edits, etc
+  * what permissions are auto-approved in settings.json (permissions.allow)
+  * bravery: how you deal with permissions (always click yes?)
+* how much grepping/globs does the agent do at the beginning of sessions
+  * how much agents poke around in the code
+* Multitasking/"ADHD index": how many sessions run in parallel (with interleaving user messages)
+  * number of abandoned sessions (agent is still waiting for input)
+* Toolkit: what features are used and how often: AGENTS.md, plan mode, worktrees, MCP, RAG, skills, hooks, subagents, etc
+ - size of AGENTS.md
+ - number of MCP servers and tools, utilisation per tool/server
+ - number of skills and how often they are used
+   * skill hoarder: how many of your tools/skills you are actually using
+ - number of hooks and invocation counts
+ - number of plugins, commands, subagents
+* session lengths in messages and time (measure of agentic autonomy)
+* project sizes
+* prompts size: writing essays in your prompts?
+* how long have you been working on each project: in activity days, in calendar days (between first session and last)
+* how much thinking does the agent do
+* please/thank you/good job/swearwords/...
+  * do you swear at the agent? do you say good job or thank you? do you address the agent as bro, bruh or dog? do you say lol? are you dumb? can we detect a rage quit?
+* team vs solo (lone wolf/indy hacker)
+* does the agent debug for you?
+* power user: /compact, and other commands, etc
+
+### Token counting
 
 * how much you fill in your context
+* number of tokens burnt
+
+### Answering Agent's Questions
+
+* Responsiveness: time to answer the AskUserQuestion or ExitPlanMode
+* Review Diligence/thoughfulness: how often the user makes any comment on agents' plans
+* Unpredictability/Originality: How often the user types custom responses to AskUserQuestion/ExitPlanMode
+
+### Regex-like heuristics
+
+* security mindset: secrets in agent sessions
+* best practices: do the agents run tests, linters etc
+* what languages your projects are in
+* how often you commit? do you commit yourself or ask claude?
+
+
+# Not so clear signals
+
+* how long are agents waiting for the user's input (or it may be tool calls?)
+
+# Qualitative analysis
+
+* style of messages: more requirements-oriented or "micromanaging"
+* are your prompts longer than the actual commands the agent runs?
+* how often unrelated tasks are mixed in the same session
+* how often the agents need guidance to discover bugs
+* what routine tasks the user delegates to agents: generating tests, resolving merge conflicts, setup tasks, "manual" testing, research, etc
+* asked agent to refactor, clean up vibe code, remove duplication
+* delivery: have you deployed anything?
+* OCD: correcting typos that don't change anything
+* non-code topics: life advice, or non-work stuff
+
+
+# --------
+
 
 
 
