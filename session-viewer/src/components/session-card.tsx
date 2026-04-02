@@ -15,6 +15,7 @@ interface SessionCardProps {
   modified: string | null;
   sizeBytes: number;
   hasPlans?: boolean;
+  userPromptCount?: number;
 }
 
 export function SessionCard({
@@ -29,6 +30,7 @@ export function SessionCard({
   modified,
   sizeBytes,
   hasPlans,
+  userPromptCount,
 }: SessionCardProps) {
   const description = aiTitle || summary || (firstPrompt ? stripIdeTags(firstPrompt) : null);
   const displayText = description ? truncate(description, 120) : sessionId.slice(0, 20) + "...";
@@ -53,7 +55,12 @@ export function SessionCard({
       </div>
       <div className="flex items-center gap-3 mt-2 text-xs text-neutral-500">
         {messageCount != null && (
-          <span>{messageCount} {messageCount === 1 ? "msg" : "msgs"}</span>
+          <span>
+            {messageCount} {messageCount === 1 ? "msg" : "msgs"}
+            {userPromptCount != null && userPromptCount > 0 && (
+              <> ({userPromptCount} {userPromptCount === 1 ? "prompt" : "prompts"})</>
+            )}
+          </span>
         )}
         {created && modified && created !== modified ? (
           isSameDate(created, modified) ? (
