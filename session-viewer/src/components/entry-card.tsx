@@ -38,7 +38,7 @@ export function EntryCard({ entry }: { entry: SessionEntry }) {
   const showBody = expanded && !(view === "rendered" && headerOnly);
 
   return (
-    <div className="border border-neutral-800 rounded-lg overflow-hidden">
+    <div id={`entry-${entry.lineIndex}`} className="border border-neutral-800 rounded-lg overflow-hidden">
       {/* Header */}
       <div
         className="flex items-center gap-2 px-3 py-2 bg-neutral-900/50 cursor-pointer hover:bg-neutral-900/80 transition-colors"

@@ -6,6 +6,8 @@ import { encodeProjectPath } from "codespeak-vibe-share/utils/paths";
 export interface SessionMetadata {
   aiTitle: string | null;
   hasPlans: boolean;
+  /** Line index of the first entry that references a plan file, or null */
+  firstPlanLineIndex: number | null;
   userPromptCount: number;
 }
 
@@ -15,11 +17,11 @@ export interface SessionMetadata {
  * - whether it references plan files
  * - count of user prompts that are not pure tool-result messages
  */
-async function extractMetadata(
+export async function extractMetadata(
   sessionId: string,
   projectPath: string,
 ): Promise<SessionMetadata> {
-  const result: SessionMetadata = { aiTitle: null, hasPlans: false, userPromptCount: 0 };
+  const result: SessionMetadata = { aiTitle: null, hasPlans: false, firstPlanLineIndex: null, userPromptCount: 0 };
 
   const filePath = await findSessionFile(sessionId, projectPath);
   if (!filePath) return result;
@@ -29,12 +31,14 @@ async function extractMetadata(
     const lines = content.split("\n");
 
     // Forward pass: detect plans and count user prompts
+    let lineIndex = 0;
     for (const raw of lines) {
       const line = raw.trim();
       if (!line) continue;
 
       if (!result.hasPlans && line.includes(".claude/plans/")) {
         result.hasPlans = true;
+        result.firstPlanLineIndex = lineIndex;
       }
 
       // Count user prompts that aren't pure tool_result messages
@@ -53,6 +57,8 @@ async function extractMetadata(
           // skip
         }
       }
+
+      lineIndex++;
     }
 
     // Reverse pass for ai-title (usually near the end)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { EntryCard } from "@/components/entry-card";
 import { getDisplayType } from "@/components/message-renderer";
 
@@ -38,8 +38,9 @@ function groupEntries(entries: SessionEntry[]): Segment[] {
   return segments;
 }
 
-function CollapsedGroup({ entries }: { entries: SessionEntry[] }) {
-  const [expanded, setExpanded] = useState(false);
+function CollapsedGroup({ entries, highlightEntry }: { entries: SessionEntry[]; highlightEntry: number | null }) {
+  const containsTarget = highlightEntry != null && entries.some((e) => e.lineIndex === highlightEntry);
+  const [expanded, setExpanded] = useState(containsTarget);
 
   if (expanded) {
     return (
@@ -73,7 +74,7 @@ interface ApiResponse {
   hasMore: boolean;
 }
 
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 500;
 
 export function SessionClient({
   sessionId,
@@ -88,6 +89,16 @@ export function SessionClient({
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const scrolledRef = useRef(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const loadingMoreRef = useRef(false);
+
+  // Parse #entry-N from URL hash
+  const highlightEntry = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const match = window.location.hash.match(/^#entry-(\d+)$/);
+    return match ? parseInt(match[1]!, 10) : null;
+  }, []);
 
   const fetchPage = useCallback(
     async (offset: number, append: boolean) => {
@@ -115,11 +126,53 @@ export function SessionClient({
     fetchPage(0, false).finally(() => setLoading(false));
   }, [fetchPage]);
 
-  const loadMore = async () => {
+  // Load more pages if needed to reach the target entry, then scroll to it
+  useEffect(() => {
+    if (highlightEntry == null || loading || scrolledRef.current) return;
+    const entryLoaded = entries.some((e) => e.lineIndex === highlightEntry);
+    if (!entryLoaded && hasMore) {
+      // Need to load more entries to reach the target
+      setLoadingMore(true);
+      fetchPage(entries.length, true).finally(() => setLoadingMore(false));
+      return;
+    }
+    if (entryLoaded) {
+      scrolledRef.current = true;
+      // Wait for DOM to render the expanded group
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`entry-${highlightEntry}`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          el.classList.add("ring-1", "ring-purple-500/60");
+        }
+      });
+    }
+  }, [highlightEntry, entries, loading, hasMore, fetchPage]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     await fetchPage(entries.length, true);
     setLoadingMore(false);
-  };
+    loadingMoreRef.current = false;
+  }, [entries.length, fetchPage]);
+
+  // Infinite scroll: auto-load when sentinel is near viewport
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (intersections) => {
+        if (intersections[0]?.isIntersecting && hasMore && !loadingMoreRef.current) {
+          loadMore();
+        }
+      },
+      { rootMargin: "400px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, loadMore]);
 
   const segments = useMemo(() => groupEntries(entries), [entries]);
 
@@ -157,19 +210,15 @@ export function SessionClient({
           seg.kind === "user" ? (
             <EntryCard key={seg.entry.lineIndex} entry={seg.entry} />
           ) : (
-            <CollapsedGroup key={`group-${i}`} entries={seg.entries} />
+            <CollapsedGroup key={`group-${i}`} entries={seg.entries} highlightEntry={highlightEntry} />
           ),
         )}
       </div>
-      {hasMore && (
-        <div className="mt-6 text-center">
-          <button
-            onClick={loadMore}
-            disabled={loadingMore}
-            className="px-4 py-2 text-sm border border-neutral-700 rounded-lg hover:bg-neutral-800 transition-colors disabled:opacity-50 cursor-pointer"
-          >
-            {loadingMore ? "Loading..." : `Load more (${total - entries.length} remaining)`}
-          </button>
+      {/* Sentinel for infinite scroll */}
+      <div ref={sentinelRef} className="h-1" />
+      {loadingMore && (
+        <div className="text-neutral-500 text-sm text-center py-4">
+          Loading more entries...
         </div>
       )}
     </div>
