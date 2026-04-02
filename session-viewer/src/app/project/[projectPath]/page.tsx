@@ -57,7 +57,7 @@ export default async function SessionListPage({
       {allSessions.length === 0 ? (
         <p className="text-neutral-500">No sessions found for this project.</p>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 grid-cols-1">
           {allSessions.map((s) => (
             <SessionCard
               key={s.sessionId}
