@@ -9,6 +9,14 @@ export interface SessionMetadata {
   /** Line index of the first entry that references a plan file, or null */
   firstPlanLineIndex: number | null;
   userPromptCount: number;
+  /** Total number of entries (non-empty lines) in the session */
+  messageCount: number;
+  /** Timestamp of the first entry */
+  created: string | null;
+  /** Timestamp of the last entry */
+  modified: string | null;
+  /** File size in bytes */
+  sizeBytes: number;
 }
 
 /**
@@ -21,17 +29,23 @@ export async function extractMetadata(
   sessionId: string,
   projectPath: string,
 ): Promise<SessionMetadata> {
-  const result: SessionMetadata = { aiTitle: null, hasPlans: false, firstPlanLineIndex: null, userPromptCount: 0 };
+  const result: SessionMetadata = {
+    aiTitle: null, hasPlans: false, firstPlanLineIndex: null,
+    userPromptCount: 0, messageCount: 0, created: null, modified: null, sizeBytes: 0,
+  };
 
   const filePath = await findSessionFile(sessionId, projectPath);
   if (!filePath) return result;
 
   try {
     const content = await fs.readFile(filePath, "utf-8");
+    result.sizeBytes = Buffer.byteLength(content, "utf-8");
     const lines = content.split("\n");
 
-    // Forward pass: detect plans and count user prompts
+    // Forward pass: detect plans, count user prompts, extract timestamps
     let lineIndex = 0;
+    let firstTimestamp: string | null = null;
+    let lastTimestamp: string | null = null;
     for (const raw of lines) {
       const line = raw.trim();
       if (!line) continue;
@@ -73,8 +87,19 @@ export async function extractMetadata(
         }
       }
 
+      // Extract timestamps cheaply via regex (avoid full JSON parse)
+      const tsMatch = line.match(/"timestamp"\s*:\s*"([^"]+)"/);
+      if (tsMatch) {
+        if (!firstTimestamp) firstTimestamp = tsMatch[1]!;
+        lastTimestamp = tsMatch[1]!;
+      }
+
       lineIndex++;
     }
+
+    result.messageCount = lineIndex;
+    result.created = firstTimestamp;
+    result.modified = lastTimestamp;
 
     // Reverse pass for ai-title (usually near the end)
     for (let i = lines.length - 1; i >= 0; i--) {
