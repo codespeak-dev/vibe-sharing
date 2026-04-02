@@ -2,6 +2,7 @@ import path from "node:path";
 import { discoverAllSessions } from "codespeak-vibe-share/sessions/discovery";
 import { decodeFromUrl } from "@/lib/urls";
 import { extractAiTitles } from "@/lib/session-titles";
+import { detectSessionsWithPlans } from "@/lib/session-plans";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { SessionCard } from "@/components/session-card";
 
@@ -31,8 +32,11 @@ export default async function SessionListPage({
       return tb - ta;
     });
 
-  // Extract ai-titles from Claude Code sessions (used as preferred display title)
-  const aiTitles = await extractAiTitles(allSessions, projectPath);
+  // Extract ai-titles and detect plans from Claude Code sessions in parallel
+  const [aiTitles, sessionsWithPlans] = await Promise.all([
+    extractAiTitles(allSessions, projectPath),
+    detectSessionsWithPlans(allSessions, projectPath),
+  ]);
 
   return (
     <div>
@@ -67,6 +71,7 @@ export default async function SessionListPage({
               created={s.created}
               modified={s.modified}
               sizeBytes={s.sizeBytes}
+              hasPlans={sessionsWithPlans.has(s.sessionId)}
             />
           ))}
         </div>

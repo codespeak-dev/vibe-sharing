@@ -14,6 +14,7 @@ interface SessionCardProps {
   created: string | null;
   modified: string | null;
   sizeBytes: number;
+  hasPlans?: boolean;
 }
 
 export function SessionCard({
@@ -27,6 +28,7 @@ export function SessionCard({
   created,
   modified,
   sizeBytes,
+  hasPlans,
 }: SessionCardProps) {
   const description = aiTitle || summary || (firstPrompt ? stripIdeTags(firstPrompt) : null);
   const displayText = description ? truncate(description, 120) : sessionId.slice(0, 20) + "...";
@@ -38,9 +40,16 @@ export function SessionCard({
     >
       <div className="flex items-start justify-between gap-2">
         <p className="text-sm leading-relaxed line-clamp-2 min-w-0">{displayText}</p>
-        <span className="shrink-0 text-xs text-neutral-500 bg-neutral-800 rounded px-1.5 py-0.5">
-          {agentName}
-        </span>
+        <div className="flex items-center gap-1 shrink-0">
+          {hasPlans && (
+            <span className="text-xs text-purple-300 bg-purple-900/50 rounded px-1.5 py-0.5">
+              plan
+            </span>
+          )}
+          <span className="text-xs text-neutral-500 bg-neutral-800 rounded px-1.5 py-0.5">
+            {agentName}
+          </span>
+        </div>
       </div>
       <div className="flex items-center gap-3 mt-2 text-xs text-neutral-500">
         {messageCount != null && (
