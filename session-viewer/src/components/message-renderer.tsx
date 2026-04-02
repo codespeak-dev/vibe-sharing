@@ -80,14 +80,9 @@ function UserMessage({ entry }: { entry: EntryRaw }) {
   const blocks = entry.message?.content ?? [];
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-900/50 text-blue-300">
-          User
-        </span>
-        {entry.message?.role && entry.message.role !== "user" && (
-          <span className="text-xs text-neutral-500">role: {entry.message.role}</span>
-        )}
-      </div>
+      {entry.message?.role && entry.message.role !== "user" && (
+        <div className="text-xs text-neutral-500">role: {entry.message.role}</div>
+      )}
       {blocks.map((block, i) => (
         <ContentBlockRenderer key={i} block={block} />
       ))}
@@ -99,14 +94,9 @@ function AssistantMessage({ entry }: { entry: EntryRaw }) {
   const blocks = entry.message?.content ?? [];
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <span className="text-xs font-semibold px-2 py-0.5 rounded bg-green-900/50 text-green-300">
-          Assistant
-        </span>
-        {entry.message?.model && (
-          <span className="text-xs text-neutral-500">{String(entry.message.model)}</span>
-        )}
-      </div>
+      {entry.message?.model && (
+        <div className="text-xs text-neutral-500">{String(entry.message.model)}</div>
+      )}
       {blocks.map((block, i) => (
         <ContentBlockRenderer key={i} block={block} />
       ))}
@@ -238,14 +228,9 @@ function SystemMessage({ entry }: { entry: EntryRaw }) {
   const subtype = entry.subtype ?? "";
   return (
     <div className="border border-neutral-800 rounded p-3 bg-neutral-900/30">
-      <div className="flex items-center gap-2 mb-1">
-        <span className="text-xs font-semibold px-2 py-0.5 rounded bg-neutral-800 text-neutral-300">
-          System
-        </span>
-        {subtype && (
-          <span className="text-xs text-neutral-500 font-mono">{subtype}</span>
-        )}
-      </div>
+      {subtype && (
+        <div className="text-xs text-neutral-500 font-mono mb-1">{subtype}</div>
+      )}
       {subtype === "stop_hook_summary" && entry.hookInfos && (
         <div className="text-xs text-neutral-400 mt-1 space-y-0.5">
           {entry.hookInfos.map((h, i) => (
@@ -271,7 +256,6 @@ function ProgressMessage({ entry }: { entry: EntryRaw }) {
   const dataType = entry.data?.type as string | undefined;
   return (
     <div className="text-xs text-neutral-500 flex items-center gap-2">
-      <span className="px-1.5 py-0.5 rounded bg-neutral-800/50 text-neutral-400">Progress</span>
       {dataType && <span className="font-mono">{dataType}</span>}
     </div>
   );
@@ -280,7 +264,6 @@ function ProgressMessage({ entry }: { entry: EntryRaw }) {
 function QueueOperation({ entry }: { entry: EntryRaw }) {
   return (
     <div className="text-xs text-neutral-500 flex items-center gap-2">
-      <span className="px-1.5 py-0.5 rounded bg-neutral-800/50 text-neutral-400">Queue</span>
       <span className="font-mono">{entry.operation ?? "unknown"}</span>
     </div>
   );
@@ -298,7 +281,6 @@ function FileSnapshot({ entry }: { entry: EntryRaw }) {
         className="w-full text-left px-3 py-1.5 text-xs text-neutral-500 flex items-center gap-2 cursor-pointer hover:text-neutral-300"
       >
         <span>{expanded ? "v" : ">"}</span>
-        <span>File Snapshot</span>
         <span className="text-neutral-600">{fileCount} files tracked</span>
       </button>
       {expanded && trackedFiles && Object.keys(trackedFiles).length > 0 && (
@@ -315,7 +297,6 @@ function FileSnapshot({ entry }: { entry: EntryRaw }) {
 function LastPrompt({ entry }: { entry: EntryRaw }) {
   return (
     <div className="border border-neutral-800 rounded p-3">
-      <span className="text-xs text-neutral-500 block mb-1">Last Prompt</span>
       <p className="text-sm whitespace-pre-wrap break-words">{entry.lastPrompt ?? ""}</p>
     </div>
   );
