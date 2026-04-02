@@ -1,13 +1,70 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { EntryCard } from "@/components/entry-card";
+import { getDisplayType } from "@/components/message-renderer";
 
 interface SessionEntry {
   lineIndex: number;
   type: string;
   timestamp: string | null;
   raw: Record<string, unknown>;
+}
+
+type Segment =
+  | { kind: "user"; entry: SessionEntry }
+  | { kind: "group"; entries: SessionEntry[] };
+
+function groupEntries(entries: SessionEntry[]): Segment[] {
+  const segments: Segment[] = [];
+  let nonUserBuf: SessionEntry[] = [];
+
+  const flushBuf = () => {
+    if (nonUserBuf.length > 0) {
+      segments.push({ kind: "group", entries: nonUserBuf });
+      nonUserBuf = [];
+    }
+  };
+
+  for (const entry of entries) {
+    if (getDisplayType(entry.raw) === "user") {
+      flushBuf();
+      segments.push({ kind: "user", entry });
+    } else {
+      nonUserBuf.push(entry);
+    }
+  }
+  flushBuf();
+  return segments;
+}
+
+function CollapsedGroup({ entries }: { entries: SessionEntry[] }) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (expanded) {
+    return (
+      <div className="space-y-3">
+        <button
+          onClick={() => setExpanded(false)}
+          className="w-full text-center text-[11px] text-neutral-500 hover:text-neutral-300 py-1 cursor-pointer transition-colors"
+        >
+          ▲ collapse {entries.length} {entries.length === 1 ? "message" : "messages"}
+        </button>
+        {entries.map((entry) => (
+          <EntryCard key={entry.lineIndex} entry={entry} />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => setExpanded(true)}
+      className="w-full text-center text-[11px] text-neutral-600 hover:text-neutral-400 py-1.5 cursor-pointer transition-colors border border-neutral-800/50 rounded-lg hover:border-neutral-700"
+    >
+      ··· {entries.length} {entries.length === 1 ? "message" : "messages"} ···
+    </button>
+  );
 }
 
 interface ApiResponse {
@@ -64,6 +121,8 @@ export function SessionClient({
     setLoadingMore(false);
   };
 
+  const segments = useMemo(() => groupEntries(entries), [entries]);
+
   if (loading) {
     return (
       <div className="text-neutral-500 py-10 text-center">
@@ -94,9 +153,13 @@ export function SessionClient({
         Showing {entries.length} of {total} entries
       </p>
       <div className="space-y-3">
-        {entries.map((entry) => (
-          <EntryCard key={entry.lineIndex} entry={entry} />
-        ))}
+        {segments.map((seg, i) =>
+          seg.kind === "user" ? (
+            <EntryCard key={seg.entry.lineIndex} entry={seg.entry} />
+          ) : (
+            <CollapsedGroup key={`group-${i}`} entries={seg.entries} />
+          ),
+        )}
       </div>
       {hasMore && (
         <div className="mt-6 text-center">
