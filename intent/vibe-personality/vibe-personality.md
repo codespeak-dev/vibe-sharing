@@ -106,5 +106,18 @@ Traits:
 
 * started over sessions: another session with a very similar prompt
 
+* ultra-viber: almost no intent, all comes from model
+
+* do you use git at all? do you have a remote on github
+
+
+* which parts of the project were difficult to get right
 
 Achievements/badges
+
+
+Misc
+- names: 
+  - vibe-caudit
+  - Personality Vibes
+  - 
