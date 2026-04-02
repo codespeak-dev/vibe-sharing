@@ -1,6 +1,7 @@
 import path from "node:path";
 import { discoverAllSessions } from "codespeak-vibe-share/sessions/discovery";
-import { decodeFromUrl, encodeForUrl } from "@/lib/urls";
+import { decodeFromUrl } from "@/lib/urls";
+import { extractAiTitles } from "@/lib/session-titles";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { SessionCard } from "@/components/session-card";
 
@@ -30,6 +31,9 @@ export default async function SessionListPage({
       return tb - ta;
     });
 
+  // Extract ai-titles from Claude Code sessions (used as preferred display title)
+  const aiTitles = await extractAiTitles(allSessions, projectPath);
+
   return (
     <div>
       <Breadcrumbs
@@ -56,6 +60,7 @@ export default async function SessionListPage({
               sessionId={s.sessionId}
               projectHref={projectHref}
               agentName={s.agentName}
+              aiTitle={aiTitles.get(s.sessionId) ?? null}
               summary={s.summary}
               firstPrompt={s.firstPrompt}
               messageCount={s.messageCount}

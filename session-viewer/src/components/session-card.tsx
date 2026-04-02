@@ -7,6 +7,7 @@ interface SessionCardProps {
   sessionId: string;
   projectHref: string;
   agentName: string;
+  aiTitle: string | null;
   summary: string | null;
   firstPrompt: string | null;
   messageCount: number | null;
@@ -19,6 +20,7 @@ export function SessionCard({
   sessionId,
   projectHref,
   agentName,
+  aiTitle,
   summary,
   firstPrompt,
   messageCount,
@@ -26,7 +28,7 @@ export function SessionCard({
   modified,
   sizeBytes,
 }: SessionCardProps) {
-  const description = summary || (firstPrompt ? stripIdeTags(firstPrompt) : null);
+  const description = aiTitle || summary || (firstPrompt ? stripIdeTags(firstPrompt) : null);
   const displayText = description ? truncate(description, 120) : sessionId.slice(0, 20) + "...";
 
   return (
