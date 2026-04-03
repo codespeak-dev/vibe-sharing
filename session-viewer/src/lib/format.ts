@@ -39,7 +39,7 @@ export function formatRelative(iso: string | null): string {
   }
 }
 
-/** Format an ISO date string as a short date + 24h time, with year if not current year. */
+/** Format an ISO date string as a short date + 24h time with seconds, with year if not current year. */
 export function formatDateTime(iso: string | null): string {
   if (!iso) return "";
   try {
@@ -49,6 +49,7 @@ export function formatDateTime(iso: string | null): string {
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      second: "2-digit",
       hourCycle: "h23",
     };
     if (d.getFullYear() !== new Date().getFullYear()) {
