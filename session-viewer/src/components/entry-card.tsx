@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { JsonViewer } from "./json-viewer";
-import { MessageRenderer, hasRenderedView, getHeaderExtra, isHeaderOnly, getCollapsedPreview, getDisplayType, entryReferencesPlans, entryHasThinking, getThinkingPreview } from "./message-renderer";
-import { truncate } from "@/lib/format";
+import { MessageRenderer, hasRenderedView, getHeaderExtra, isHeaderOnly, getCollapsedPreview, getDisplayType, entryReferencesPlans, entryHasThinking, getThinkingPreview, getEntryIdeTags } from "./message-renderer";
+import { truncate, foldCwd } from "@/lib/format";
 import { formatDate } from "@/lib/format";
 
 interface SessionEntry {
@@ -25,7 +25,7 @@ const TYPE_COLORS: Record<string, string> = {
   "tool-result": "bg-amber-900/50 text-amber-300",
 };
 
-export function EntryCard({ entry, forceExpanded }: { entry: SessionEntry; forceExpanded?: boolean }) {
+export function EntryCard({ entry, forceExpanded, projectPath }: { entry: SessionEntry; forceExpanded?: boolean; projectPath?: string }) {
   const canRender = hasRenderedView(entry.type);
   const headerOnly = isHeaderOnly(entry.raw);
   const displayType = getDisplayType(entry.raw);
@@ -42,6 +42,8 @@ export function EntryCard({ entry, forceExpanded }: { entry: SessionEntry; force
   const hasPlan = entryReferencesPlans(entry.raw);
   const hasThinking = entryHasThinking(entry.raw);
   const thinkingPreview = hasThinking ? getThinkingPreview(entry.raw) : null;
+  const cwd = projectPath || (typeof entry.raw.cwd === "string" ? entry.raw.cwd : "");
+  const ideTags = getEntryIdeTags(entry.raw);
   const showBody = expanded && !(view === "rendered" && headerOnly);
 
   return (
@@ -68,6 +70,11 @@ export function EntryCard({ entry, forceExpanded }: { entry: SessionEntry; force
             thinking
           </span>
         )}
+        {ideTags.map((tag, i) => (
+          <span key={i} className="text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 bg-neutral-800 text-neutral-400 font-mono">
+            &lt;{tag.tagName}&gt;
+          </span>
+        ))}
         {entry.timestamp && (
           <span className="text-[10px] text-neutral-600 shrink-0">{formatDate(entry.timestamp)}</span>
         )}
@@ -112,7 +119,7 @@ export function EntryCard({ entry, forceExpanded }: { entry: SessionEntry; force
       {showBody && (
         <div className="p-3 border-t border-neutral-800">
           {view === "rendered" ? (
-            <MessageRenderer entry={entry.raw} />
+            <MessageRenderer entry={entry.raw} cwd={cwd} />
           ) : (
             <JsonViewer data={entry.raw} defaultCollapsed={false} />
           )}

@@ -52,7 +52,7 @@ export default async function SessionDetailPage({
           sizeBytes={metadata.sizeBytes}
         />
       </div>
-      <SessionClient sessionId={sessionId} encodedProjectPath={encodedPath} />
+      <SessionClient sessionId={sessionId} encodedProjectPath={encodedPath} projectPath={projectPath} />
     </div>
   );
 }

@@ -112,7 +112,66 @@ export function truncate(str: string, maxLen: number): string {
   return str.slice(0, maxLen) + "...";
 }
 
+/** Replace occurrences of a cwd path with $CWD in text. */
+export function foldCwd(text: string, cwd: string): string {
+  if (!cwd) return text;
+  // Ensure no trailing slash for consistent replacement
+  const normalized = cwd.replace(/\/+$/, "");
+  if (!normalized) return text;
+  return text.replaceAll(normalized, "$CWD");
+}
+
+/** Shorten a path from the beginning if it exceeds maxLen. e.g. ".../foo.txt" */
+export function shortenPath(path: string, maxLen: number): string {
+  if (path.length <= maxLen) return path;
+  // Find last component(s) that fit
+  const parts = path.split("/");
+  let result = parts[parts.length - 1] ?? path;
+  for (let i = parts.length - 2; i >= 0; i--) {
+    const candidate = parts.slice(i).join("/");
+    if (candidate.length + 4 > maxLen) break; // 4 for ".../"
+    result = candidate;
+  }
+  return `.../${result}`;
+}
+
 /** Strip IDE context tags from text. */
 export function stripIdeTags(text: string): string {
   return text.replace(/<ide_\w+>[\s\S]*?<\/ide_\w+>/g, "").trim();
+}
+
+export interface IdeTag {
+  tagName: string;
+  content: string;
+}
+
+export interface TextSegment {
+  type: "text" | "ide";
+  text?: string;
+  tag?: IdeTag;
+}
+
+/** Parse text into alternating text and IDE tag segments. */
+export function parseIdeTags(text: string): { segments: TextSegment[]; tags: IdeTag[] } {
+  const re = /<(ide_\w+)>([\s\S]*?)<\/\1>/g;
+  const segments: TextSegment[] = [];
+  const tags: IdeTag[] = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push({ type: "text", text: text.slice(lastIndex, match.index) });
+    }
+    const tag: IdeTag = { tagName: match[1], content: match[2].trim() };
+    tags.push(tag);
+    segments.push({ type: "ide", tag });
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    segments.push({ type: "text", text: text.slice(lastIndex) });
+  }
+
+  return { segments, tags };
 }

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { stripIdeTags, truncate } from "@/lib/format";
+import { stripIdeTags, parseIdeTags, foldCwd, shortenPath, type IdeTag, truncate } from "@/lib/format";
 
 interface ContentBlock {
   type: string;
@@ -70,6 +70,18 @@ export function entryReferencesPlans(entry: EntryRaw): boolean {
 export function entryHasThinking(entry: EntryRaw): boolean {
   const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
   return blocks.some((b) => b.type === "thinking" && !!b.thinking);
+}
+
+/** Get IDE tags from text blocks in an entry. */
+export function getEntryIdeTags(entry: EntryRaw): IdeTag[] {
+  const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
+  const tags: IdeTag[] = [];
+  for (const b of blocks) {
+    if (b.type === "text" && b.text) {
+      tags.push(...parseIdeTags(b.text).tags);
+    }
+  }
+  return tags;
 }
 
 /** Get a short preview of the first thinking block in an entry. */
@@ -180,14 +192,14 @@ export function isHeaderOnly(entry: EntryRaw): boolean {
   return false;
 }
 
-export function MessageRenderer({ entry }: { entry: EntryRaw }) {
+export function MessageRenderer({ entry, cwd }: { entry: EntryRaw; cwd?: string }) {
   const type = entry.type ?? "unknown";
 
   switch (type) {
     case "user":
-      return <UserMessage entry={entry} />;
+      return <UserMessage entry={entry} cwd={cwd ?? ""} />;
     case "assistant":
-      return <AssistantMessage entry={entry} />;
+      return <AssistantMessage entry={entry} cwd={cwd ?? ""} />;
     case "system":
       return <SystemMessage entry={entry} />;
     case "progress":
@@ -205,7 +217,7 @@ export function MessageRenderer({ entry }: { entry: EntryRaw }) {
   }
 }
 
-function UserMessage({ entry }: { entry: EntryRaw }) {
+function UserMessage({ entry, cwd }: { entry: EntryRaw; cwd: string }) {
   const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
   return (
     <div className="space-y-2">
@@ -213,13 +225,13 @@ function UserMessage({ entry }: { entry: EntryRaw }) {
         <div className="text-xs text-neutral-500">role: {entry.message.role}</div>
       )}
       {blocks.map((block, i) => (
-        <ContentBlockRenderer key={i} block={block} />
+        <ContentBlockRenderer key={i} block={block} cwd={cwd} />
       ))}
     </div>
   );
 }
 
-function AssistantMessage({ entry }: { entry: EntryRaw }) {
+function AssistantMessage({ entry, cwd }: { entry: EntryRaw; cwd: string }) {
   const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
   return (
     <div className="space-y-2">
@@ -227,16 +239,16 @@ function AssistantMessage({ entry }: { entry: EntryRaw }) {
         <div className="text-xs text-neutral-500">{String(entry.message.model)}</div>
       )}
       {blocks.map((block, i) => (
-        <ContentBlockRenderer key={i} block={block} />
+        <ContentBlockRenderer key={i} block={block} cwd={cwd} />
       ))}
     </div>
   );
 }
 
-function ContentBlockRenderer({ block }: { block: ContentBlock }) {
+function ContentBlockRenderer({ block, cwd }: { block: ContentBlock; cwd: string }) {
   switch (block.type) {
     case "text":
-      return <TextBlock text={block.text ?? ""} />;
+      return <TextBlock text={block.text ?? ""} cwd={cwd} />;
     case "thinking":
       return <ThinkingBlock text={block.thinking ?? ""} />;
     case "tool_use":
@@ -253,12 +265,66 @@ function ContentBlockRenderer({ block }: { block: ContentBlock }) {
   }
 }
 
-function TextBlock({ text }: { text: string }) {
-  const cleaned = stripIdeTags(text);
-  if (!cleaned) return null;
+function foldAndShortenPreview(text: string, cwd: string, maxLen: number): string {
+  let folded = foldCwd(text, cwd);
+  // Shorten any remaining long paths (sequences of /word/word/...)
+  folded = folded.replace(/(?:\/[\w._-]+){3,}/g, (match) => shortenPath(match, 40));
+  return truncate(folded, maxLen);
+}
+
+function IdeTagBlock({ tagName, content, cwd }: { tagName: string; content: string; cwd: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const preview = foldAndShortenPreview(content.split("\n")[0] ?? "", cwd, 60);
+  const displayContent = foldCwd(content, cwd);
+
   return (
-    <div className="text-sm whitespace-pre-wrap break-words leading-relaxed bg-neutral-900/30 rounded p-3 border border-neutral-800/50">
-      {cleaned}
+    <span className="inline-flex flex-col align-top">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-400 hover:bg-neutral-700 cursor-pointer transition-colors"
+      >
+        <span>{expanded ? "▾" : "▸"}</span>
+        <span className="font-mono">&lt;{tagName}&gt;</span>
+        {!expanded && (
+          <span className="font-normal text-neutral-500 max-w-[250px] truncate">{preview}</span>
+        )}
+      </button>
+      {expanded && (
+        <div className="mt-1 text-xs text-neutral-400 whitespace-pre-wrap break-words leading-relaxed bg-neutral-900/50 border border-neutral-700 rounded p-2 max-h-96 overflow-y-auto">
+          {displayContent}
+        </div>
+      )}
+    </span>
+  );
+}
+
+function TextBlock({ text, cwd }: { text: string; cwd: string }) {
+  const { segments, tags } = parseIdeTags(text);
+  const hasIdeContent = tags.length > 0;
+
+  // Check if there's any non-IDE text content
+  const plainText = segments
+    .filter((s) => s.type === "text")
+    .map((s) => s.text ?? "")
+    .join("")
+    .trim();
+
+  if (!plainText && !hasIdeContent) return null;
+
+  return (
+    <div className="space-y-2">
+      {plainText && (
+        <div className="text-sm whitespace-pre-wrap break-words leading-relaxed bg-neutral-900/30 rounded p-3 border border-neutral-800/50">
+          {plainText}
+        </div>
+      )}
+      {hasIdeContent && (
+        <div className="flex flex-wrap gap-1.5">
+          {tags.map((tag, i) => (
+            <IdeTagBlock key={i} tagName={tag.tagName} content={tag.content} cwd={cwd} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

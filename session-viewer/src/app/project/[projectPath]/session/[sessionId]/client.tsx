@@ -41,7 +41,7 @@ function groupEntries(entries: SessionEntry[], highlightEntry: number | null): S
   return segments;
 }
 
-function CollapsedGroup({ entries }: { entries: SessionEntry[] }) {
+function CollapsedGroup({ entries, projectPath }: { entries: SessionEntry[]; projectPath: string }) {
   const [expanded, setExpanded] = useState(false);
 
   if (expanded) {
@@ -54,7 +54,7 @@ function CollapsedGroup({ entries }: { entries: SessionEntry[] }) {
           ▲ collapse {entries.length} {entries.length === 1 ? "message" : "messages"}
         </button>
         {entries.map((entry) => (
-          <EntryCard key={entry.lineIndex} entry={entry} />
+          <EntryCard key={entry.lineIndex} entry={entry} projectPath={projectPath} />
         ))}
       </div>
     );
@@ -81,9 +81,11 @@ const PAGE_SIZE = 500;
 export function SessionClient({
   sessionId,
   encodedProjectPath,
+  projectPath,
 }: {
   sessionId: string;
   encodedProjectPath: string;
+  projectPath: string;
 }) {
   const [entries, setEntries] = useState<SessionEntry[]>([]);
   const [total, setTotal] = useState(0);
@@ -221,9 +223,9 @@ export function SessionClient({
       <div className="space-y-3">
         {segments.map((seg, i) =>
           seg.kind === "standalone" ? (
-            <EntryCard key={seg.entry.lineIndex} entry={seg.entry} forceExpanded={seg.entry.lineIndex === highlightEntry} />
+            <EntryCard key={seg.entry.lineIndex} entry={seg.entry} forceExpanded={seg.entry.lineIndex === highlightEntry} projectPath={projectPath} />
           ) : (
-            <CollapsedGroup key={`group-${i}`} entries={seg.entries} />
+            <CollapsedGroup key={`group-${i}`} entries={seg.entries} projectPath={projectPath} />
           ),
         )}
       </div>
