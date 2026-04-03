@@ -23,6 +23,7 @@ A good metric is
 * Agent Efficiency: how often agents' solutions are rejected/corrected
 * % of choosing not the first option on questions/permissions
 * overnight toil: how many sessions run into the night/are finished at the end of the day
+* Purity of vibe coding/Getting hands dirty: what percentage of your code is written by agent
 
 ### Counts
 
@@ -47,6 +48,7 @@ A good metric is
    * skill hoarder: how many of your tools/skills you are actually using
  - number of hooks and invocation counts
  - number of plugins, commands, subagents
+ - inspect your configs and see what you are using
 * session lengths in messages and time (measure of agentic autonomy)
 * project sizes
 * prompts size: writing essays in your prompts?
@@ -57,6 +59,12 @@ A good metric is
 * team vs solo (lone wolf/indy hacker)
 * does the agent debug for you?
 * power user: /compact, and other commands, etc
+* paste a screenshot into the chat
+* /btw
+* afterthoughts: follow-up messages while the agent is still thinking
+* IDE/print mode
+* do you use git at all? do you have a remote on github
+
 
 ### Token counting
 
@@ -75,6 +83,11 @@ A good metric is
 * best practices: do the agents run tests, linters etc
 * what languages your projects are in
 * how often you commit? do you commit yourself or ask claude?
+* have you tried to prompt-inject the agent
+* "make no mistakes", "think extra hard", "ultrathink"
+* are you using Boris Cherny's instructions, or Karpathy's?
+* received "you are absolutely right"
+* told the agent "you are absolutely right"
 
 
 # Not so clear signals
@@ -92,53 +105,18 @@ A good metric is
 * delivery: have you deployed anything?
 * OCD: correcting typos that don't change anything
 * non-code topics: life advice, or non-work stuff
+* paste screenshots of you own code
+* have you tried to convince the model by reasoning with it, asking rhetorical questions, etc
+* have you been refused a request because of guardrails
+* have you tried to prompt-inject the agent
+* "you could have googled that"
+* spelling mistakes, grammar mistakes
+* started over sessions: another session with a very similar prompt
+* ultra-viber: almost no intent, all comes from model
+* which parts of the project were difficult to get right
 
 
 # --------
-
-
-
-
-* paste a screenshot into the chat
-
-   * paste screenshots of you own code
-
-* coverage: what percentage of your code is written by agent
-
-* have you tried to convince the model by reasoning with it, asking rhetorical questions, etc
-
-* have you been refused a request because of guardrails
-
-* have you tried to prompt-inject the agent
-
-* "make no mistakes", "think extra hard", "ultrathink"
-
-* are you using Boris Cherny's instructions, or Karpathy's?
-
-* inspect your configs and see what you are using
-
-* "you could have googled that"
-
-* /btw
-
-* afterthoughts: follow-up messages while the agent is still thinking
-
-* spelling mistakes, grammar mistakes
-
-* IDE/print mode
-
-* received "you are absolutely right"
-
-* told the agent "you are absolutely right"
-
-* started over sessions: another session with a very similar prompt
-
-* ultra-viber: almost no intent, all comes from model
-
-* do you use git at all? do you have a remote on github
-
-
-* which parts of the project were difficult to get right
 
 Achievements/badges
 
@@ -147,4 +125,4 @@ Misc
 - names: 
   - vibe-caudit
   - Personality Vibes
-  - 
+  - vibe-soul
