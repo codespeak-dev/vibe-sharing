@@ -1,10 +1,10 @@
-import { discoverAllProjects } from "codespeak-vibe-share/sessions/global-discovery";
+import { cachedDiscoverAllProjects } from "@/lib/discovery-cache";
 import { ProjectCard } from "@/components/project-card";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProjectListPage() {
-  const { projects } = await discoverAllProjects();
+  const { projects } = await cachedDiscoverAllProjects();
 
   if (projects.length === 0) {
     return (

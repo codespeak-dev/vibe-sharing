@@ -1,8 +1,14 @@
 import { NextRequest } from "next/server";
 import fs from "node:fs/promises";
-import path from "node:path";
-import { CLAUDE_PROJECTS_DIR } from "codespeak-vibe-share/config";
-import { encodeProjectPath } from "codespeak-vibe-share/utils/paths";
+import {
+  openCache,
+  isSessionFresh,
+  getEntries,
+  getEntryCount,
+  setEntries,
+  setSessionMetadata,
+} from "@/lib/cache-db";
+import { findSessionFile } from "@/lib/session-metadata";
 
 export interface SessionEntry {
   lineIndex: number;
@@ -11,52 +17,16 @@ export interface SessionEntry {
   raw: Record<string, unknown>;
 }
 
-interface CacheEntry {
-  mtime: number;
-  entries: SessionEntry[];
-}
-
-// Simple in-memory cache keyed by file path
-const cache = new Map<string, CacheEntry>();
-
-async function findSessionFile(
+/**
+ * Parse a JSONL file into SessionEntry[].
+ * Also stores results in SQLite so subsequent requests are instant.
+ */
+async function loadAndCacheEntries(
+  filePath: string,
   sessionId: string,
-  projectPath: string,
-): Promise<string | null> {
-  // Try primary encoded path first
-  const encoded = encodeProjectPath(projectPath);
-  const primary = path.join(CLAUDE_PROJECTS_DIR, encoded, `${sessionId}.jsonl`);
-  try {
-    await fs.access(primary);
-    return primary;
-  } catch {}
-
-  // Fallback: scan all project directories (session UUIDs are globally unique)
-  try {
-    const dirs = await fs.readdir(CLAUDE_PROJECTS_DIR, { withFileTypes: true });
-    for (const dir of dirs) {
-      if (!dir.isDirectory()) continue;
-      const candidate = path.join(CLAUDE_PROJECTS_DIR, dir.name, `${sessionId}.jsonl`);
-      try {
-        await fs.access(candidate);
-        return candidate;
-      } catch {}
-    }
-  } catch {}
-
-  return null;
-}
-
-async function loadEntries(filePath: string): Promise<SessionEntry[]> {
-  // Check cache by mtime
-  const stat = await fs.stat(filePath);
-  const mtime = stat.mtimeMs;
-  const cached = cache.get(filePath);
-  if (cached && cached.mtime === mtime) {
-    return cached.entries;
-  }
-
+): Promise<void> {
   const content = await fs.readFile(filePath, "utf-8");
+  const stat = await fs.stat(filePath);
   const entries: SessionEntry[] = [];
   let lineIndex = 0;
 
@@ -77,8 +47,17 @@ async function loadEntries(filePath: string): Promise<SessionEntry[]> {
     lineIndex++;
   }
 
-  cache.set(filePath, { mtime, entries });
-  return entries;
+  const db = openCache();
+
+  // Ensure a sessions row exists so the FK on entries is satisfied.
+  // Use a minimal upsert that only sets mtime (metadata extraction fills the rest).
+  db.prepare(
+    `INSERT INTO sessions (file_path, session_id, mtime_ms)
+     VALUES (?, ?, ?)
+     ON CONFLICT(file_path) DO UPDATE SET mtime_ms = excluded.mtime_ms`,
+  ).run(filePath, sessionId, stat.mtimeMs);
+
+  setEntries(db, filePath, entries);
 }
 
 export async function GET(request: NextRequest) {
@@ -103,12 +82,22 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const allEntries = await loadEntries(filePath);
-    const slice = allEntries.slice(offset, offset + limit);
+    const db = openCache();
+    const stat = await fs.stat(filePath);
+
+    // If cache is stale or empty, re-ingest
+    if (!isSessionFresh(db, filePath, stat.mtimeMs)) {
+      await loadAndCacheEntries(filePath, sessionId);
+    }
+
+    // Serve from SQLite — pagination handled by SQL
+    const entries = getEntries(db, filePath, offset, limit);
+    const total = getEntryCount(db, filePath);
+
     return Response.json({
-      entries: slice,
-      total: allEntries.length,
-      hasMore: offset + limit < allEntries.length,
+      entries,
+      total,
+      hasMore: offset + limit < total,
     });
   } catch (err) {
     return Response.json(

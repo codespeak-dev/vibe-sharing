@@ -1,5 +1,5 @@
 import path from "node:path";
-import { discoverAllSessions } from "codespeak-vibe-share/sessions/discovery";
+import { cachedDiscoverAllSessions } from "@/lib/discovery-cache";
 import { decodeFromUrl } from "@/lib/urls";
 import { extractAllSessionMetadata } from "@/lib/session-metadata";
 import { Breadcrumbs } from "@/components/breadcrumbs";
@@ -17,7 +17,7 @@ export default async function SessionListPage({
   const projectName = path.basename(projectPath);
   const projectHref = `/project/${encodedPath}`;
 
-  const result = await discoverAllSessions({
+  const result = await cachedDiscoverAllSessions({
     worktreePaths: [projectPath],
     gitRemoteUrl: null,
   });
