@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { JsonViewer } from "./json-viewer";
-import { MessageRenderer, hasRenderedView, getHeaderExtra, isHeaderOnly, getCollapsedPreview, getDisplayType, entryReferencesPlans, entryHasThinking, getThinkingPreview, getEntryIdeTags } from "./message-renderer";
-import { truncate, foldCwd } from "@/lib/format";
-import { formatDate } from "@/lib/format";
+import { MessageRenderer, hasRenderedView, getHeaderExtra, isHeaderOnly, getCollapsedPreview, getDisplayType, entryReferencesPlans, entryHasThinking, getThinkingPreview, getEntryIdeTags, type ToolUseInfo } from "./message-renderer";
+import { truncate, foldCwd, shortenPath } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
 
 interface SessionEntry {
   lineIndex: number;
@@ -25,7 +25,27 @@ const TYPE_COLORS: Record<string, string> = {
   "tool-result": "bg-amber-900/50 text-amber-300",
 };
 
-export function EntryCard({ entry, forceExpanded, projectPath }: { entry: SessionEntry; forceExpanded?: boolean; projectPath?: string }) {
+/** Extract a short file/path/pattern label from a tool_use input. */
+function toolDetail(info: ToolUseInfo, cwd: string): string | null {
+  const inp = info.input;
+  if (!inp) return null;
+  // Bash: show command, truncated from the end
+  if (info.name === "Bash" && typeof inp.command === "string") {
+    const cmd = inp.command.split("\n")[0] ?? "";
+    return truncate(cmd, 80);
+  }
+  const raw =
+    (typeof inp.file_path === "string" && inp.file_path) ||
+    (typeof inp.path === "string" && inp.path) ||
+    (typeof inp.pattern === "string" && inp.pattern) ||
+    null;
+  if (!raw) return null;
+  let s = cwd ? foldCwd(raw, cwd) : raw;
+  if (s.length > 50) s = shortenPath(s, 50);
+  return s;
+}
+
+export function EntryCard({ entry, forceExpanded, projectPath, toolMap }: { entry: SessionEntry; forceExpanded?: boolean; projectPath?: string; toolMap?: Map<string, ToolUseInfo> }) {
   const canRender = hasRenderedView(entry.type);
   const headerOnly = isHeaderOnly(entry.raw);
   const displayType = getDisplayType(entry.raw);
@@ -44,6 +64,23 @@ export function EntryCard({ entry, forceExpanded, projectPath }: { entry: Sessio
   const thinkingPreview = hasThinking ? getThinkingPreview(entry.raw) : null;
   const cwd = projectPath || (typeof entry.raw.cwd === "string" ? entry.raw.cwd : "");
   const ideTags = getEntryIdeTags(entry.raw);
+
+  // Build tool badges + detail for the header
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawMsg = (entry.raw as any)?.message;
+  const contentBlocks: Array<Record<string, unknown>> = Array.isArray(rawMsg?.content) ? rawMsg.content : [];
+  const toolInfos: Array<{ name: string; detail: string | null }> = [];
+  for (const b of contentBlocks) {
+    if (b.type === "tool_use" && typeof b.name === "string") {
+      toolInfos.push({ name: b.name, detail: toolDetail({ name: b.name, input: b.input as Record<string, unknown> | undefined }, cwd) });
+    } else if (b.type === "tool_result" && typeof b.tool_use_id === "string" && toolMap) {
+      const info = toolMap.get(b.tool_use_id);
+      if (info) {
+        toolInfos.push({ name: info.name, detail: toolDetail(info, cwd) });
+      }
+    }
+  }
+
   const showBody = expanded && !(view === "rendered" && headerOnly);
 
   return (
@@ -75,32 +112,39 @@ export function EntryCard({ entry, forceExpanded, projectPath }: { entry: Sessio
             &lt;{tag.tagName}&gt;
           </span>
         ))}
-        {entry.timestamp && (
-          <span className="text-[10px] text-neutral-600 shrink-0">{formatDate(entry.timestamp)}</span>
-        )}
         {headerExtra && (
           <span className="text-[10px] text-neutral-400 truncate">{headerExtra}</span>
         )}
-        {!expanded && preview && !headerExtra && (
+        {toolInfos.map((t, i) => (
+          <span key={`tool-${i}`} className="text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 bg-amber-900/50 text-amber-300">
+            {t.name}
+          </span>
+        ))}
+        {toolInfos.length > 0 && (
+          <span className="text-[10px] text-neutral-500 truncate font-mono">
+            {toolInfos.map((t) => t.detail).filter(Boolean).join(", ")}
+          </span>
+        )}
+        {toolInfos.length === 0 && preview && !headerExtra && (
           <span className="text-[10px] text-neutral-500 truncate">{truncate(preview, 120)}</span>
         )}
-        {!expanded && thinkingPreview && (
+        {thinkingPreview && (
           <span className="text-[10px] text-sky-400/60 truncate italic">{truncate(thinkingPreview, 80)}</span>
         )}
-        {expanded && (
-          <div className="ml-auto flex gap-1" onClick={(e) => e.stopPropagation()}>
-            {canRender && (
-              <button
-                onClick={() => setView("rendered")}
-                className={`text-[10px] px-2 py-0.5 rounded cursor-pointer transition-colors ${
-                  view === "rendered"
-                    ? "bg-neutral-700 text-neutral-200"
-                    : "text-neutral-500 hover:text-neutral-300"
-                }`}
-              >
-                Rendered
-              </button>
-            )}
+        <div className="ml-auto flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+          {expanded && canRender && (
+            <button
+              onClick={() => setView("rendered")}
+              className={`text-[10px] px-2 py-0.5 rounded cursor-pointer transition-colors ${
+                view === "rendered"
+                  ? "bg-neutral-700 text-neutral-200"
+                  : "text-neutral-500 hover:text-neutral-300"
+              }`}
+            >
+              Rendered
+            </button>
+          )}
+          {expanded && (
             <button
               onClick={() => setView("raw")}
               className={`text-[10px] px-2 py-0.5 rounded cursor-pointer transition-colors ${
@@ -111,15 +155,18 @@ export function EntryCard({ entry, forceExpanded, projectPath }: { entry: Sessio
             >
               JSON
             </button>
-          </div>
-        )}
+          )}
+          {entry.timestamp && (
+            <span className="text-[10px] text-neutral-600 shrink-0">{formatDateTime(entry.timestamp)}</span>
+          )}
+        </div>
       </div>
 
       {/* Body */}
       {showBody && (
         <div className="p-3 border-t border-neutral-800">
           {view === "rendered" ? (
-            <MessageRenderer entry={entry.raw} cwd={cwd} />
+            <MessageRenderer entry={entry.raw} cwd={cwd} toolMap={toolMap} />
           ) : (
             <JsonViewer data={entry.raw} defaultCollapsed={false} />
           )}

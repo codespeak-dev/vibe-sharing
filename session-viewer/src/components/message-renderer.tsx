@@ -192,12 +192,34 @@ export function isHeaderOnly(entry: EntryRaw): boolean {
   return false;
 }
 
-export function MessageRenderer({ entry, cwd }: { entry: EntryRaw; cwd?: string }) {
+export interface ToolUseInfo {
+  name: string;
+  input?: Record<string, unknown>;
+}
+
+/** Extract a meaningful detail string (file path, pattern, command) from tool input. */
+function toolDetailStr(name: string, input: Record<string, unknown> | undefined, cwd: string): string | null {
+  if (!input) return null;
+  if (name === "Bash" && typeof input.command === "string") {
+    return truncate(input.command.split("\n")[0] ?? "", 80);
+  }
+  const raw =
+    (typeof input.file_path === "string" && input.file_path) ||
+    (typeof input.path === "string" && input.path) ||
+    (typeof input.pattern === "string" && input.pattern) ||
+    null;
+  if (!raw) return null;
+  let s = cwd ? foldCwd(raw, cwd) : raw;
+  if (s.length > 60) s = shortenPath(s, 60);
+  return s;
+}
+
+export function MessageRenderer({ entry, cwd, toolMap }: { entry: EntryRaw; cwd?: string; toolMap?: Map<string, ToolUseInfo> }) {
   const type = entry.type ?? "unknown";
 
   switch (type) {
     case "user":
-      return <UserMessage entry={entry} cwd={cwd ?? ""} />;
+      return <UserMessage entry={entry} cwd={cwd ?? ""} toolMap={toolMap} />;
     case "assistant":
       return <AssistantMessage entry={entry} cwd={cwd ?? ""} />;
     case "system":
@@ -217,7 +239,7 @@ export function MessageRenderer({ entry, cwd }: { entry: EntryRaw; cwd?: string 
   }
 }
 
-function UserMessage({ entry, cwd }: { entry: EntryRaw; cwd: string }) {
+function UserMessage({ entry, cwd, toolMap }: { entry: EntryRaw; cwd: string; toolMap?: Map<string, ToolUseInfo> }) {
   const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
   return (
     <div className="space-y-2">
@@ -225,7 +247,7 @@ function UserMessage({ entry, cwd }: { entry: EntryRaw; cwd: string }) {
         <div className="text-xs text-neutral-500">role: {entry.message.role}</div>
       )}
       {blocks.map((block, i) => (
-        <ContentBlockRenderer key={i} block={block} cwd={cwd} />
+        <ContentBlockRenderer key={i} block={block} cwd={cwd} toolMap={toolMap} />
       ))}
     </div>
   );
@@ -245,7 +267,7 @@ function AssistantMessage({ entry, cwd }: { entry: EntryRaw; cwd: string }) {
   );
 }
 
-function ContentBlockRenderer({ block, cwd }: { block: ContentBlock; cwd: string }) {
+function ContentBlockRenderer({ block, cwd, toolMap }: { block: ContentBlock; cwd: string; toolMap?: Map<string, ToolUseInfo> }) {
   switch (block.type) {
     case "text":
       return <TextBlock text={block.text ?? ""} cwd={cwd} />;
@@ -253,9 +275,9 @@ function ContentBlockRenderer({ block, cwd }: { block: ContentBlock; cwd: string
       return <ThinkingBlock text={block.thinking ?? ""} />;
     case "tool_use":
       if (isPlanToolUse(block)) return <PlanToolUseBlock block={block} />;
-      return <ToolUseBlock block={block} />;
+      return <ToolUseBlock block={block} cwd={cwd} />;
     case "tool_result":
-      return <ToolResultBlock block={block} />;
+      return <ToolResultBlock block={block} cwd={cwd} toolMap={toolMap} />;
     default:
       return (
         <div className="text-xs text-neutral-500 border border-neutral-800 rounded p-2">
@@ -356,12 +378,11 @@ function ThinkingBlock({ text }: { text: string }) {
   );
 }
 
-function ToolUseBlock({ block }: { block: ContentBlock }) {
+function ToolUseBlock({ block, cwd }: { block: ContentBlock; cwd: string }) {
   const [expanded, setExpanded] = useState(false);
   const inputStr = block.input ? JSON.stringify(block.input, null, 2) : "";
-  const inputPreview = block.input
-    ? truncate(JSON.stringify(block.input), 80)
-    : "";
+  const name = block.name ?? "tool";
+  const detail = toolDetailStr(name, block.input, cwd);
 
   return (
     <div className="border border-amber-900/50 rounded bg-amber-950/20">
@@ -370,10 +391,8 @@ function ToolUseBlock({ block }: { block: ContentBlock }) {
         className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 cursor-pointer hover:bg-amber-950/30"
       >
         <span className="text-neutral-500">{expanded ? "v" : ">"}</span>
-        <span className="font-semibold text-amber-400">{block.name ?? "tool"}</span>
-        {!expanded && (
-          <span className="text-neutral-500 truncate font-mono">{inputPreview}</span>
-        )}
+        <span className="font-semibold text-amber-400">{name}</span>
+        {detail && <span className="text-neutral-500 truncate font-mono">{detail}</span>}
       </button>
       {expanded && inputStr && (
         <pre className="px-3 pb-3 text-xs text-neutral-400 font-mono whitespace-pre-wrap break-words max-h-96 overflow-y-auto">
@@ -457,8 +476,8 @@ function PlanToolUseBlock({ block }: { block: ContentBlock }) {
   );
 }
 
-function ToolResultBlock({ block }: { block: ContentBlock }) {
-  const [expanded, setExpanded] = useState(false);
+function ToolResultBlock({ block, cwd, toolMap }: { block: ContentBlock; cwd: string; toolMap?: Map<string, ToolUseInfo> }) {
+  const [expanded, setExpanded] = useState(true);
   let content = "";
   if (typeof block.content === "string") {
     content = block.content;
@@ -467,7 +486,11 @@ function ToolResultBlock({ block }: { block: ContentBlock }) {
       .map((c) => (typeof c === "string" ? c : c.text ?? JSON.stringify(c)))
       .join("\n");
   }
-  const preview = truncate(content.split("\n")[0] ?? "", 80);
+
+  // Resolve tool name + detail from the matching tool_use block
+  const resolved = block.tool_use_id && toolMap ? toolMap.get(block.tool_use_id) : undefined;
+  const toolName = resolved?.name ?? null;
+  const detail = resolved ? toolDetailStr(resolved.name, resolved.input, cwd) : null;
 
   return (
     <div className="border border-neutral-800 rounded bg-neutral-950/50">
@@ -476,13 +499,13 @@ function ToolResultBlock({ block }: { block: ContentBlock }) {
         className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 cursor-pointer hover:bg-neutral-900/50"
       >
         <span className="text-neutral-500">{expanded ? "v" : ">"}</span>
-        <span className="text-neutral-400">Tool Result</span>
-        {block.tool_use_id && (
+        <span className="text-neutral-400">{toolName ? `${toolName} result` : "Tool Result"}</span>
+        {detail && <span className="text-neutral-500 truncate font-mono">{detail}</span>}
+        {!detail && block.tool_use_id && (
           <span className="text-neutral-600 font-mono text-[10px]">
             {block.tool_use_id.slice(0, 12)}...
           </span>
         )}
-        {!expanded && <span className="text-neutral-500 truncate">{preview}</span>}
       </button>
       {expanded && content && (
         <pre className="px-3 pb-3 text-xs text-neutral-400 font-mono whitespace-pre-wrap break-words max-h-96 overflow-y-auto">

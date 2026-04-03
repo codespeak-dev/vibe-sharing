@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { EntryCard } from "@/components/entry-card";
+import { type ToolUseInfo } from "@/components/message-renderer";
 import { getDisplayType } from "@/components/message-renderer";
 
 interface SessionEntry {
@@ -41,7 +42,7 @@ function groupEntries(entries: SessionEntry[], highlightEntry: number | null): S
   return segments;
 }
 
-function CollapsedGroup({ entries, projectPath }: { entries: SessionEntry[]; projectPath: string }) {
+function CollapsedGroup({ entries, projectPath, toolMap }: { entries: SessionEntry[]; projectPath: string; toolMap: Map<string, ToolUseInfo> }) {
   const [expanded, setExpanded] = useState(false);
 
   if (expanded) {
@@ -54,7 +55,7 @@ function CollapsedGroup({ entries, projectPath }: { entries: SessionEntry[]; pro
           ▲ collapse {entries.length} {entries.length === 1 ? "message" : "messages"}
         </button>
         {entries.map((entry) => (
-          <EntryCard key={entry.lineIndex} entry={entry} projectPath={projectPath} />
+          <EntryCard key={entry.lineIndex} entry={entry} projectPath={projectPath} toolMap={toolMap} />
         ))}
       </div>
     );
@@ -191,6 +192,22 @@ export function SessionClient({
 
   const segments = useMemo(() => groupEntries(entries, highlightEntry), [entries, highlightEntry]);
 
+  // Build a lookup from tool_use_id → tool info so tool-result entries can show tool names
+  const toolMap = useMemo(() => {
+    const map = new Map<string, ToolUseInfo>();
+    for (const entry of entries) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const blocks: unknown[] = (entry.raw as any)?.message?.content ?? [];
+      if (!Array.isArray(blocks)) continue;
+      for (const b of blocks as Array<Record<string, unknown>>) {
+        if (b.type === "tool_use" && typeof b.id === "string" && typeof b.name === "string") {
+          map.set(b.id, { name: b.name, input: b.input as Record<string, unknown> | undefined });
+        }
+      }
+    }
+    return map;
+  }, [entries]);
+
   if (loading) {
     return (
       <div className="text-neutral-500 py-10 text-center">
@@ -223,9 +240,9 @@ export function SessionClient({
       <div className="space-y-3">
         {segments.map((seg, i) =>
           seg.kind === "standalone" ? (
-            <EntryCard key={seg.entry.lineIndex} entry={seg.entry} forceExpanded={seg.entry.lineIndex === highlightEntry} projectPath={projectPath} />
+            <EntryCard key={seg.entry.lineIndex} entry={seg.entry} forceExpanded={seg.entry.lineIndex === highlightEntry} projectPath={projectPath} toolMap={toolMap} />
           ) : (
-            <CollapsedGroup key={`group-${i}`} entries={seg.entries} projectPath={projectPath} />
+            <CollapsedGroup key={`group-${i}`} entries={seg.entries} projectPath={projectPath} toolMap={toolMap} />
           ),
         )}
       </div>
