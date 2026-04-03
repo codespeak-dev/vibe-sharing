@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { JsonViewer } from "./json-viewer";
-import { MessageRenderer, hasRenderedView, getHeaderExtra, isHeaderOnly, getCollapsedPreview, getDisplayType, entryReferencesPlans } from "./message-renderer";
+import { MessageRenderer, hasRenderedView, getHeaderExtra, isHeaderOnly, getCollapsedPreview, getDisplayType, entryReferencesPlans, entryHasThinking, getThinkingPreview } from "./message-renderer";
 import { truncate } from "@/lib/format";
 import { formatDate } from "@/lib/format";
 
@@ -40,6 +40,8 @@ export function EntryCard({ entry, forceExpanded }: { entry: SessionEntry; force
   const headerExtra = getHeaderExtra(entry.raw);
   const preview = getCollapsedPreview(entry.raw);
   const hasPlan = entryReferencesPlans(entry.raw);
+  const hasThinking = entryHasThinking(entry.raw);
+  const thinkingPreview = hasThinking ? getThinkingPreview(entry.raw) : null;
   const showBody = expanded && !(view === "rendered" && headerOnly);
 
   return (
@@ -61,6 +63,11 @@ export function EntryCard({ entry, forceExpanded }: { entry: SessionEntry; force
             plan
           </span>
         )}
+        {hasThinking && (
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 bg-sky-900/50 text-sky-300">
+            thinking
+          </span>
+        )}
         {entry.timestamp && (
           <span className="text-[10px] text-neutral-600 shrink-0">{formatDate(entry.timestamp)}</span>
         )}
@@ -69,6 +76,9 @@ export function EntryCard({ entry, forceExpanded }: { entry: SessionEntry; force
         )}
         {!expanded && preview && !headerExtra && (
           <span className="text-[10px] text-neutral-500 truncate">{truncate(preview, 120)}</span>
+        )}
+        {!expanded && thinkingPreview && (
+          <span className="text-[10px] text-sky-400/60 truncate italic">{truncate(thinkingPreview, 80)}</span>
         )}
         {expanded && (
           <div className="ml-auto flex gap-1" onClick={(e) => e.stopPropagation()}>

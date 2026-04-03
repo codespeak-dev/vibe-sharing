@@ -66,6 +66,20 @@ export function entryReferencesPlans(entry: EntryRaw): boolean {
   return blocks.some((b) => isPlanToolUse(b) || isPlanToolResult(b));
 }
 
+/** Check if any content block in an entry is a thinking block. */
+export function entryHasThinking(entry: EntryRaw): boolean {
+  const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
+  return blocks.some((b) => b.type === "thinking" && !!b.thinking);
+}
+
+/** Get a short preview of the first thinking block in an entry. */
+export function getThinkingPreview(entry: EntryRaw): string | null {
+  const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
+  const thinking = blocks.find((b) => b.type === "thinking" && !!b.thinking);
+  if (!thinking?.thinking) return null;
+  return thinking.thinking.split("\n")[0] ?? null;
+}
+
 /** Extract a human-readable plan name from a file path. */
 function getPlanName(filePath: string): string {
   const idx = filePath.lastIndexOf("/");
