@@ -6,103 +6,65 @@ Create a system of UI idioms for how blocks are displayed in the sessions view t
 
 ## Core Principles
 
-- All information should be viewable (nothing truly hidden). 
+- All information should be viewable (nothing truly hidden).
   - For every message #N in the session, there must be a way to expand some blocks or groups to see it — no entry should be silently dropped by the grouping algorithm.
 - Only important stuff should be visible by default
   - what's important should be configurable by the user
 - Low-signal things shouldn't take much space on the screen by default
 
-## Three Independent Dimensions
+## Three Layers (computed in order)
 
-Every card (entry) has three independent properties. Each is controlled separately.
+### Layer 1: Individual Card State
+Each entry gets a default **expanded** or **collapsed** state.
 
-### 1. Logical Grouping
+- Expanded by default: user prompts, assistant text responses, plans, agent questions + answers
+- Collapsed by default: everything else
 
-A card is either **standalone** (shown on its own at the top level) or **bunched** with logically related consecutive cards into a group.
+### Layer 2: Topical Grouping
+Consecutive related cards are grouped into a collapsible unit with a summary header.
 
-Groups:
-- **Tool call cycle** — a `tool_use` (assistant entry) + hooks (system entries) + `tool_result` (user entry). Multiple consecutive cycles form one group.
-- **Progress run** — consecutive progress entries merged into ONE group, not many tiny ones. Should merge aggressively regardless of what other low-signal entries appear between them.
-- **Queue operations** — similar low-signal grouping
-- **File-history-snapshot** — similar low-signal grouping
-- **Subagent call** — Agent tool_use + hooks + result, embedded as an expandable section or link to its own page
+- **Tool call run** — consecutive tool_use + tool_result + system hooks + thinking-only entries
+- **Noise run** — consecutive progress + queue-operation + file-history-snapshot + orphan system
+- **Subagent** — Agent tool_use + hooks + result
 
-Standalone:
-- User prompts
-- Agent questions (AskUserQuestion) + answers
-- Plans (Write/Edit to .claude/plans/)
-- Assistant text responses
-- Completion reports
-- ExitPlanMode (separator/badge)
+Cards not in a topical group stay standalone (user prompts, assistant text, plans, questions, misc).
 
-### 2. Card State (expanded / collapsed)
+A topical group acts as a single unit in the layer above.
 
-Each individual card can be **expanded** (showing full body with Rendered/JSON toggle) or **collapsed** (showing only the header line).
+### Layer 3: Collapsing Intermediate Actions
+Between any two **primary-interest** items, all non-primary items are collected into **at most one collapsed group**.
 
-This is independent of grouping — a card inside a group can be expanded or collapsed.
+- Primary interest: user prompts, assistant text responses, plans, agent questions + answers, ExitPlanMode
+- Non-primary: tool call groups, noise groups, subagent groups, misc, etc.
 
-Default card state depends on type:
-- User prompts → expanded
-- Plans → expanded
-- Agent questions/answers → expanded
-- Assistant text responses → expanded
-- Everything else → collapsed
-
-### 3. Card Visibility (top-level / inside collapsed group)
-
-A card is either:
-- **Top-level** — directly visible in the scroll
-- **Inside a collapsed group** — only visible when the user expands the group
-
-This applies only to grouped cards. The group itself has a collapsed/expanded state:
-- Group collapsed → shows a summary line (e.g., "23 tool calls: Read(3) Bash(8)..."), cards inside are hidden
-- Group expanded → cards inside become visible (each in their own expanded/collapsed state)
-
-### Defaults by entry type
-
-| Entry type | Grouping | Card state | Visibility |
-|---|---|---|---|
-| User prompt | standalone | expanded | top-level |
-| Agent question + answer | standalone | expanded | top-level |
-| Plan (Write/Edit) | standalone | expanded | top-level |
-| Assistant text response | standalone | expanded | top-level |
-| Completion report | standalone | expanded | top-level |
-| ExitPlanMode | standalone (badge) | n/a | top-level |
-| Tool call cycle | grouped | collapsed | inside collapsed group |
-| Subagent call | grouped | collapsed | inside collapsed group |
-| Progress | grouped | collapsed | inside collapsed group |
-| Queue operation | grouped | collapsed | inside collapsed group |
-| File-history-snapshot | grouped | collapsed | inside collapsed group |
-| System/hooks | grouped (with tool cycle) | collapsed | inside collapsed group |
-| Thinking-only assistant | grouped (with tool cycle) | collapsed | inside collapsed group |
-| ai-title, last-prompt, misc | standalone | collapsed | top-level |
+A collapsed group can contain a mix of individual cards and topical groups (from Layer 2). So the nesting is: **collapsed group → topical group → individual card**.
 
 ## Configurable Filter UI
 
-A compact filter bar at the top of the session view.
+A compact filter bar at the top of the session view. The filter mechanism controls which entries are treated as primary interest, expanded/collapsed by default, and in topical groups.
 
 ### Per-tag controls
 - A row of toggle-able tag pills, one per entry type / segment kind
-- Each pill controls the defaults for that tag across the three dimensions:
-  - **Card state** override: expanded ↔ collapsed
-  - **Visibility** override: promote grouped cards to top-level, or demote standalone cards into their group
-- Exact interaction design TBD — needs to be simple enough to use without explanation
+- Each pill controls the defaults for that tag across the layers:
+  - **Card state** override: expanded ↔ collapsed (Layer 1)
+  - **Primary interest** override: promote to primary or demote to non-primary (Layer 3)
+- Exact interaction design TBD
 
 ### Global actions
 - **Expand all** button — expands every block and group on the page
-- **Re-apply filter** button — re-collapses everything back to the current filter settings (undoes manual expansions and "Expand all")
-- **Reset to defaults** link — restores the default visibility tiers (undoes any per-tag overrides)
+- **Re-apply filter** button — re-collapses everything back to the current filter settings
+- **Reset to defaults** link — restores the default settings
 
 ### Persistence
-- Filter state stored in URL search params (e.g. `?show=user-prompt,plan&collapse=tool-cycle-group`) so it's shareable and survives refresh
-- Also persisted to `localStorage` as the user's preference for next visit (URL params take precedence)
+- Filter state stored in URL search params — shareable, survives refresh
+- Also persisted to `localStorage` (URL params take precedence)
 
 ## Critical Constraint: Preserve EntryCard
 
 The existing `EntryCard` component has carefully crafted features that MUST be preserved:
 - Expand/collapse toggle with triangle indicator
 - Line number display
-- Type badge (color-coded: blue for user, green for assistant, amber for tool-result, etc.)
+- Type badge (color-coded)
 - Tool badges showing tool names and file paths / commands
 - IDE tag badges
 - Thinking preview

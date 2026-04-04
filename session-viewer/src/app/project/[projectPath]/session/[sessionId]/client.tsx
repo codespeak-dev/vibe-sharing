@@ -2,74 +2,222 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { EntryCard } from "@/components/entry-card";
+import { FilterBar } from "@/components/filter-bar";
 import { type ToolUseInfo } from "@/components/message-renderer";
-import { getDisplayType } from "@/components/message-renderer";
+import {
+  buildDisplayItems,
+  type SessionEntry,
+  type DisplayItem,
+  type ClassifiedEntry,
+  type CollapsedGroup,
+  type TopicalGroup,
+  type Layer2Item,
+} from "@/lib/grouping";
 
-interface SessionEntry {
-  lineIndex: number;
-  type: string;
-  timestamp: string | null;
-  raw: Record<string, unknown>;
-}
+// ── Rendering components ───────────────────────────────────────────
 
-type Segment =
-  | { kind: "standalone"; entry: SessionEntry }
-  | { kind: "group"; entries: SessionEntry[] };
-
-function groupEntries(entries: SessionEntry[], highlightEntry: number | null): Segment[] {
-  const segments: Segment[] = [];
-  let nonUserBuf: SessionEntry[] = [];
-
-  const flushBuf = () => {
-    if (nonUserBuf.length > 0) {
-      segments.push({ kind: "group", entries: nonUserBuf });
-      nonUserBuf = [];
-    }
-  };
-
-  for (const entry of entries) {
-    const isStandalone =
-      getDisplayType(entry.raw) === "user" ||
-      entry.lineIndex === highlightEntry;
-    if (isStandalone) {
-      flushBuf();
-      segments.push({ kind: "standalone", entry });
-    } else {
-      nonUserBuf.push(entry);
-    }
-  }
-  flushBuf();
-  return segments;
-}
-
-function CollapsedGroup({ entries, projectPath, toolMap }: { entries: SessionEntry[]; projectPath: string; toolMap: Map<string, ToolUseInfo> }) {
-  const [expanded, setExpanded] = useState(false);
-
-  if (expanded) {
+function DisplayItemView({
+  item,
+  projectPath,
+  toolMap,
+  reapplyKey,
+  expandAll,
+}: {
+  item: DisplayItem;
+  projectPath: string;
+  toolMap: Map<string, ToolUseInfo>;
+  reapplyKey: number;
+  expandAll: boolean;
+}) {
+  if (item.kind === "entry") {
     return (
-      <div className="space-y-3">
-        <button
-          onClick={() => setExpanded(false)}
-          className="w-full text-center text-[11px] text-neutral-500 hover:text-neutral-300 py-1 cursor-pointer transition-colors"
-        >
-          ▲ collapse {entries.length} {entries.length === 1 ? "message" : "messages"}
-        </button>
-        {entries.map((entry) => (
-          <EntryCard key={entry.lineIndex} entry={entry} projectPath={projectPath} toolMap={toolMap} />
-        ))}
-      </div>
+      <EntryCard
+        entry={item.entry}
+        forceExpanded={expandAll || item.defaultExpanded}
+        projectPath={projectPath}
+        toolMap={toolMap}
+      />
+    );
+  }
+  return (
+    <CollapsedGroupView
+      group={item}
+      projectPath={projectPath}
+      toolMap={toolMap}
+      reapplyKey={reapplyKey}
+      expandAll={expandAll}
+    />
+  );
+}
+
+function CollapsedGroupView({
+  group,
+  projectPath,
+  toolMap,
+  reapplyKey,
+  expandAll,
+}: {
+  group: CollapsedGroup;
+  projectPath: string;
+  toolMap: Map<string, ToolUseInfo>;
+  reapplyKey: number;
+  expandAll: boolean;
+}) {
+  const [expanded, setExpanded] = useState(expandAll);
+  const reapplyRef = useRef(reapplyKey);
+
+  // React to expandAll / reapply
+  useEffect(() => { if (expandAll) setExpanded(true); }, [expandAll]);
+  useEffect(() => {
+    if (reapplyRef.current !== reapplyKey) {
+      reapplyRef.current = reapplyKey;
+      setExpanded(false);
+    }
+  }, [reapplyKey]);
+
+  if (!expanded) {
+    return (
+      <button
+        onClick={() => setExpanded(true)}
+        className="w-full flex items-center text-[11px] text-neutral-600 hover:text-neutral-400 py-1.5 cursor-pointer transition-colors border border-neutral-800/50 rounded-lg hover:border-neutral-700"
+      >
+        <span className="flex-1 text-center">··· {group.summary} ···</span>
+        {group.duration && (
+          <span className="text-[10px] text-neutral-600 shrink-0 pr-3">{group.duration}</span>
+        )}
+      </button>
     );
   }
 
   return (
-    <button
-      onClick={() => setExpanded(true)}
-      className="w-full text-center text-[11px] text-neutral-600 hover:text-neutral-400 py-1.5 cursor-pointer transition-colors border border-neutral-800/50 rounded-lg hover:border-neutral-700"
-    >
-      ··· {entries.length} {entries.length === 1 ? "message" : "messages"} ···
-    </button>
+    <div className="space-y-2 bg-blue-950/20 border border-blue-900/30 rounded-lg p-2">
+      <button
+        onClick={() => setExpanded(false)}
+        className="w-full flex items-center text-[11px] text-neutral-500 hover:text-neutral-300 py-1 cursor-pointer transition-colors"
+      >
+        <span className="flex-1 text-center">▲ collapse {group.summary}</span>
+        {group.duration && (
+          <span className="text-[10px] text-neutral-600 shrink-0 pr-1">{group.duration}</span>
+        )}
+      </button>
+      {group.items.map((item, i) => (
+        <Layer2ItemView
+          key={layer2Key(item, i)}
+          item={item}
+          projectPath={projectPath}
+          toolMap={toolMap}
+          reapplyKey={reapplyKey}
+          expandAll={expandAll}
+          autoExpand={group.items.length === 1 && item.kind === "topical-group"}
+        />
+      ))}
+    </div>
   );
 }
+
+function Layer2ItemView({
+  item,
+  projectPath,
+  toolMap,
+  reapplyKey,
+  expandAll,
+  autoExpand,
+}: {
+  item: Layer2Item;
+  projectPath: string;
+  toolMap: Map<string, ToolUseInfo>;
+  reapplyKey: number;
+  expandAll: boolean;
+  autoExpand?: boolean;
+}) {
+  if (item.kind === "entry") {
+    return (
+      <EntryCard
+        entry={item.entry}
+        forceExpanded={expandAll || item.defaultExpanded}
+        projectPath={projectPath}
+        toolMap={toolMap}
+      />
+    );
+  }
+  return (
+    <TopicalGroupView
+      group={item}
+      projectPath={projectPath}
+      toolMap={toolMap}
+      reapplyKey={reapplyKey}
+      expandAll={expandAll}
+      autoExpand={autoExpand}
+    />
+  );
+}
+
+function TopicalGroupView({
+  group,
+  projectPath,
+  toolMap,
+  reapplyKey,
+  expandAll,
+  autoExpand,
+}: {
+  group: TopicalGroup;
+  projectPath: string;
+  toolMap: Map<string, ToolUseInfo>;
+  reapplyKey: number;
+  expandAll: boolean;
+  autoExpand?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(expandAll || !!autoExpand);
+  const reapplyRef = useRef(reapplyKey);
+
+  useEffect(() => { if (expandAll) setExpanded(true); }, [expandAll]);
+  useEffect(() => {
+    // Only react to reapply changes, not the initial mount
+    if (reapplyRef.current !== reapplyKey) {
+      reapplyRef.current = reapplyKey;
+      setExpanded(!!autoExpand);
+    }
+  }, [reapplyKey, autoExpand]);
+
+  if (!expanded) {
+    return (
+      <button
+        onClick={() => setExpanded(true)}
+        className="w-full text-left text-[11px] text-neutral-500 hover:text-neutral-300 py-1.5 px-3 cursor-pointer transition-colors border border-neutral-800/30 rounded-lg hover:border-neutral-700"
+      >
+        ▸ {group.summary}
+      </button>
+    );
+  }
+
+  return (
+    <div className="border border-neutral-800/30 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setExpanded(false)}
+        className="w-full text-left text-[11px] text-neutral-500 hover:text-neutral-300 py-1.5 px-3 cursor-pointer transition-colors"
+      >
+        ▾ {group.summary}
+      </button>
+      <div className="space-y-2 p-2 border-t border-indigo-900/30 bg-indigo-950/15">
+        {group.entries.map((entry) => (
+          <EntryCard
+            key={entry.lineIndex}
+            entry={entry}
+            projectPath={projectPath}
+            toolMap={toolMap}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function layer2Key(item: Layer2Item, index: number): string {
+  if (item.kind === "entry") return `e-${item.entry.lineIndex}`;
+  return `tg-${item.entries[0]?.lineIndex ?? index}`;
+}
+
+// ── Main client ────────────────────────────────────────────────────
 
 interface ApiResponse {
   entries: SessionEntry[];
@@ -97,13 +245,15 @@ export function SessionClient({
   const scrolledRef = useRef(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const loadingMoreRef = useRef(false);
+  const [expandAll, setExpandAll] = useState(false);
+  const [reapplyKey, setReapplyKey] = useState(0);
+
   const [highlightEntry, setHighlightEntry] = useState<number | null>(() => {
     if (typeof window === "undefined") return null;
     const match = window.location.hash.match(/^#entry-(\d+)$/);
     return match ? parseInt(match[1]!, 10) : null;
   });
 
-  // Listen for same-page hash changes (e.g. clicking plan badge on session page)
   useEffect(() => {
     const onHashChange = () => {
       const match = window.location.hash.match(/^#entry-(\d+)$/);
@@ -140,19 +290,16 @@ export function SessionClient({
     fetchPage(0, false).finally(() => setLoading(false));
   }, [fetchPage]);
 
-  // Load more pages if needed to reach the target entry, then scroll to it
   useEffect(() => {
     if (highlightEntry == null || loading || scrolledRef.current) return;
     const entryLoaded = entries.some((e) => e.lineIndex === highlightEntry);
     if (!entryLoaded && hasMore) {
-      // Need to load more entries to reach the target
       setLoadingMore(true);
       fetchPage(entries.length, true).finally(() => setLoadingMore(false));
       return;
     }
     if (entryLoaded) {
       scrolledRef.current = true;
-      // Wait for DOM to render the expanded group (two frames for React commit + paint)
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           const el = document.getElementById(`entry-${highlightEntry}`);
@@ -174,7 +321,6 @@ export function SessionClient({
     loadingMoreRef.current = false;
   }, [entries.length, fetchPage]);
 
-  // Infinite scroll: auto-load when sentinel is near viewport
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
@@ -190,9 +336,8 @@ export function SessionClient({
     return () => observer.disconnect();
   }, [hasMore, loadMore]);
 
-  const segments = useMemo(() => groupEntries(entries, highlightEntry), [entries, highlightEntry]);
+  const displayItems = useMemo(() => buildDisplayItems(entries), [entries]);
 
-  // Build a lookup from tool_use_id → tool info so tool-result entries can show tool names
   const toolMap = useMemo(() => {
     const map = new Map<string, ToolUseInfo>();
     for (const entry of entries) {
@@ -208,50 +353,47 @@ export function SessionClient({
     return map;
   }, [entries]);
 
+  const handleExpandAll = useCallback(() => setExpandAll(true), []);
+  const handleReapply = useCallback(() => {
+    setExpandAll(false);
+    setReapplyKey((k) => k + 1);
+  }, []);
+
   if (loading) {
-    return (
-      <div className="text-neutral-500 py-10 text-center">
-        Loading session entries...
-      </div>
-    );
+    return <div className="text-neutral-500 py-10 text-center">Loading session entries...</div>;
   }
 
   if (error) {
-    return (
-      <div className="text-red-400 py-10 text-center">
-        <p>Error: {error}</p>
-      </div>
-    );
+    return <div className="text-red-400 py-10 text-center"><p>Error: {error}</p></div>;
   }
 
   if (entries.length === 0) {
-    return (
-      <div className="text-neutral-500 py-10 text-center">
-        No entries found in this session.
-      </div>
-    );
+    return <div className="text-neutral-500 py-10 text-center">No entries found in this session.</div>;
   }
 
   return (
     <div>
-      <p className="text-sm text-neutral-500 mb-4">
-        Showing {entries.length} of {total} entries
-      </p>
-      <div className="space-y-3">
-        {segments.map((seg, i) =>
-          seg.kind === "standalone" ? (
-            <EntryCard key={seg.entry.lineIndex} entry={seg.entry} forceExpanded={seg.entry.lineIndex === highlightEntry} projectPath={projectPath} toolMap={toolMap} />
-          ) : (
-            <CollapsedGroup key={`group-${i}`} entries={seg.entries} projectPath={projectPath} toolMap={toolMap} />
-          ),
-        )}
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-sm text-neutral-500">
+          Showing {entries.length} of {total} entries
+        </p>
+        <FilterBar onExpandAll={handleExpandAll} onReapply={handleReapply} />
       </div>
-      {/* Sentinel for infinite scroll */}
+      <div className="space-y-3">
+        {displayItems.map((item, i) => (
+          <DisplayItemView
+            key={item.kind === "entry" ? `e-${item.entry.lineIndex}` : `cg-${item.items[0]?.kind === "entry" ? item.items[0].entry.lineIndex : (item.items[0] as TopicalGroup)?.entries[0]?.lineIndex ?? i}`}
+            item={item}
+            projectPath={projectPath}
+            toolMap={toolMap}
+            reapplyKey={reapplyKey}
+            expandAll={expandAll}
+          />
+        ))}
+      </div>
       <div ref={sentinelRef} className="h-1" />
       {loadingMore && (
-        <div className="text-neutral-500 text-sm text-center py-4">
-          Loading more entries...
-        </div>
+        <div className="text-neutral-500 text-sm text-center py-4">Loading more entries...</div>
       )}
     </div>
   );
