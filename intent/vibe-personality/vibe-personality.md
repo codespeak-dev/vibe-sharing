@@ -88,6 +88,7 @@ A good metric is
 * are you using Boris Cherny's instructions, or Karpathy's?
 * received "you are absolutely right"
 * told the agent "you are absolutely right"
+* do you use capitalisation and punctuation
 
 
 # Not so clear signals
