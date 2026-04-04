@@ -83,15 +83,34 @@ export function EntryCard({ entry, forceExpanded, projectPath, toolMap, defaultM
 
   const showBody = expanded && !(view === "rendered" && headerOnly);
 
+  const isUser = displayType === "user";
+  const isAssistant = entry.type === "assistant";
+
+  const containerClass = isUser
+    ? "border-blue-700/40 bg-blue-950/50"
+    : isAssistant
+    ? "border-green-800/40 bg-green-950/40"
+    : "border-neutral-800";
+  const headerClass = isUser
+    ? "bg-blue-900/30 hover:bg-blue-900/40"
+    : isAssistant
+    ? "bg-green-900/20 hover:bg-green-900/30"
+    : "bg-neutral-900/50 hover:bg-neutral-900/80";
+  const accentClass = isUser
+    ? "text-blue-500/70"
+    : isAssistant
+    ? "text-green-600/70"
+    : "text-neutral-600";
+
   return (
-    <div id={`entry-${entry.lineIndex}`} className="border border-neutral-800 rounded-lg overflow-hidden">
+    <div id={`entry-${entry.lineIndex}`} className={`border rounded-lg overflow-hidden ${containerClass}`}>
       {/* Header */}
       <div
-        className="flex items-center gap-2 px-3 py-2 bg-neutral-900/50 cursor-pointer hover:bg-neutral-900/80 transition-colors"
+        className={`flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${headerClass}`}
         onClick={() => setExpanded(!expanded)}
       >
-        <span className="text-[10px] text-neutral-600 shrink-0">{expanded ? "\u25BC" : "\u25B6"}</span>
-        <span className="text-[10px] text-neutral-600 font-mono w-8 text-right shrink-0">
+        <span className={`text-[10px] shrink-0 ${accentClass}`}>{expanded ? "\u25BC" : "\u25B6"}</span>
+        <span className={`text-[10px] font-mono w-8 text-right shrink-0 ${accentClass}`}>
           #{entry.lineIndex}
         </span>
         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${colorClass}`}>
@@ -164,7 +183,7 @@ export function EntryCard({ entry, forceExpanded, projectPath, toolMap, defaultM
 
       {/* Body */}
       {showBody && (
-        <div className="p-3 border-t border-neutral-800">
+        <div className={`p-3 border-t ${isUser ? "border-blue-800/30" : isAssistant ? "border-green-800/30" : "border-neutral-800"}`}>
           {view === "rendered" ? (
             <MessageRenderer entry={entry.raw} cwd={cwd} toolMap={toolMap} defaultModel={defaultModel} />
           ) : (
