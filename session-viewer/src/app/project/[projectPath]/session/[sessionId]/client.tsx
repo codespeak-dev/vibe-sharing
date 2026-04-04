@@ -257,7 +257,6 @@ export function SessionClient({
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrolledRef = useRef(false);
-  const sentinelRef = useRef<HTMLDivElement>(null);
   const loadingMoreRef = useRef(false);
   const [expandAll, setExpandAll] = useState(false);
   const [reapplyKey, setReapplyKey] = useState(0);
@@ -326,29 +325,16 @@ export function SessionClient({
     }
   }, [highlightEntry, entries, loading, hasMore, fetchPage]);
 
-  const loadMore = useCallback(async () => {
-    if (loadingMoreRef.current) return;
+  // Eagerly load all remaining pages — with collapsed groups the DOM is small
+  useEffect(() => {
+    if (!hasMore || loadingMoreRef.current || loading) return;
     loadingMoreRef.current = true;
     setLoadingMore(true);
-    await fetchPage(entries.length, true);
-    setLoadingMore(false);
-    loadingMoreRef.current = false;
-  }, [entries.length, fetchPage]);
-
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-    const observer = new IntersectionObserver(
-      (intersections) => {
-        if (intersections[0]?.isIntersecting && hasMore && !loadingMoreRef.current) {
-          loadMore();
-        }
-      },
-      { rootMargin: "400px" },
-    );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [hasMore, loadMore]);
+    fetchPage(entries.length, true).finally(() => {
+      setLoadingMore(false);
+      loadingMoreRef.current = false;
+    });
+  }, [hasMore, entries.length, fetchPage, loading]);
 
   const displayItems = useMemo(() => buildDisplayItems(entries), [entries]);
 
@@ -432,7 +418,6 @@ export function SessionClient({
           />
         ))}
       </div>
-      <div ref={sentinelRef} className="h-1" />
       {loadingMore && (
         <div className="text-neutral-500 text-sm text-center py-4">Loading more entries...</div>
       )}
