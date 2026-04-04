@@ -150,7 +150,7 @@ const PRIMARY_TAGS = new Set<EntryTag>([
 
 /** Which tags default to expanded cards? */
 const EXPANDED_TAGS = new Set<EntryTag>([
-  "user-prompt", "assistant-text", "plan", "agent-question",
+  "user-prompt", "assistant-text", "plan", "agent-question", "exit-plan-mode",
 ]);
 
 /** Which tags participate in topical grouping, and what group type? */

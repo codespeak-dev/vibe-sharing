@@ -278,6 +278,7 @@ function ContentBlockRenderer({ block, cwd, toolMap, toolResultMap, markdown }: 
     case "tool_use":
       if (isPlanToolUse(block)) return <PlanToolUseBlock block={block} />;
       if (block.name === "AskUserQuestion") return <AskUserQuestionBlock block={block} toolResultMap={toolResultMap} />;
+      if (block.name === "ExitPlanMode") return <ExitPlanModeBlock block={block} toolResultMap={toolResultMap} />;
       return <ToolUseBlock block={block} cwd={cwd} />;
     case "tool_result":
       return <ToolResultBlock block={block} cwd={cwd} toolMap={toolMap} />;
@@ -547,7 +548,7 @@ function AskUserQuestionBlock({ block, toolResultMap }: { block: ContentBlock; t
             : q.options.some((o) => o.label === answer)
         );
         // For multiSelect, find any selection that didn't match an option
-        const otherText = answer != null && !allSelectionsMatchOptions
+        const userText = answer != null && !allSelectionsMatchOptions
           ? (selections
               ? [...selections].filter((s) => !q.options.some((o) => o.label === s)).join(", ")
               : answer)
@@ -589,7 +590,7 @@ function AskUserQuestionBlock({ block, toolResultMap }: { block: ContentBlock; t
                 })}
               </div>
             )}
-            {otherText != null && (
+            {userText != null && (
               <div className={`flex items-start gap-2 rounded px-2 py-1 text-sm bg-teal-900/30 ${q.options.length > 0 ? "" : "mt-0"}`}>
                 <span className="shrink-0 mt-0.5 text-teal-300">
                   {q.multiSelect ? "\u2611" : "\u25C9"}
@@ -597,13 +598,119 @@ function AskUserQuestionBlock({ block, toolResultMap }: { block: ContentBlock; t
                 <div className="min-w-0">
                   <span className="text-teal-200 font-medium">Other</span>
                   <span className="block text-xs text-neutral-500 mt-0.5">User commented:</span>
-                  <span className="block text-xs text-teal-300/80 whitespace-pre-wrap break-words">{otherText}</span>
+                  <span className="block text-xs text-teal-300/80 whitespace-pre-wrap break-words">{userText}</span>
                 </div>
               </div>
             )}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+interface PlanComment {
+  ref: string;
+  comment: string;
+}
+
+type PlanDecision = "approved" | "keep-planning" | "cancelled" | "other";
+
+/** Parse ExitPlanMode tool result into a decision, optional comments, and optional user text. */
+function parseExitPlanModeResult(content: string): { decision: PlanDecision; comments: PlanComment[]; userText: string | null } {
+  const comments: PlanComment[] = [];
+  let decision: PlanDecision = "other";
+  let userText: string | null = null;
+
+  if (content.startsWith("User has approved your plan") || content.startsWith("User has approved exiting plan mode")) {
+    decision = "approved";
+  } else if (content.startsWith("User chose to stay in plan mode")) {
+    decision = "keep-planning";
+  } else if (content.startsWith("The user doesn't want to proceed")) {
+    const reasonMatch = content.match(/The user provided the following reason for the rejection:\s*([\s\S]*)/);
+    if (reasonMatch) {
+      decision = "other";
+      userText = reasonMatch[1]!.trim();
+    } else {
+      decision = "cancelled";
+    }
+  } else {
+    decision = "other";
+    userText = content;
+  }
+
+  const commentSection = content.split("Comments on the plan:\n")[1];
+  if (commentSection) {
+    const regex = /\[Re: "([^"]*(?:"[^"]*)*?)"\]\s*([\s\S]*?)(?=\n\[Re: "|$)/g;
+    let match;
+    while ((match = regex.exec(commentSection)) !== null) {
+      comments.push({ ref: match[1]!, comment: match[2]!.trim() });
+    }
+  }
+  return { decision, comments, userText };
+}
+
+const PLAN_DECISION_OPTIONS: Array<{ key: PlanDecision; label: string }> = [
+  { key: "approved", label: "Approve plan" },
+  { key: "keep-planning", label: "Keep planning" },
+  { key: "other", label: "Other" },
+  { key: "cancelled", label: "Cancel (Esc)" },
+];
+
+function ExitPlanModeBlock({ block, toolResultMap }: { block: ContentBlock; toolResultMap?: Map<string, string> }) {
+  const rawResult = block.id && toolResultMap ? toolResultMap.get(block.id) : undefined;
+  const { decision, comments, userText } = rawResult
+    ? parseExitPlanModeResult(rawResult)
+    : { decision: null as PlanDecision | null, comments: [] as PlanComment[], userText: null };
+
+  return (
+    <div className="border border-purple-900/50 rounded bg-purple-950/20">
+      {comments.length > 0 ? (
+        <div className="px-3 py-2">
+          <span className="text-sm text-amber-400 font-medium">{"\u21BB"} Keep planning</span>
+        </div>
+      ) : (
+        <div className="px-3 py-2">
+          <div className="text-xs font-semibold text-purple-400 mb-1.5">Plan review</div>
+          <div className="space-y-0.5">
+            {PLAN_DECISION_OPTIONS.map((opt) => {
+              const isSelected = decision === opt.key;
+              return (
+                <div
+                  key={opt.key}
+                  className={`flex items-start gap-2 rounded px-2 py-1 text-sm ${isSelected ? "bg-purple-900/30" : ""}`}
+                >
+                  <span className={`shrink-0 mt-0.5 ${isSelected ? "text-purple-300" : "text-neutral-600"}`}>
+                    {isSelected ? "\u25C9" : "\u25CB"}
+                  </span>
+                  <span className={isSelected ? "text-purple-200 font-medium" : "text-neutral-400"}>
+                    {opt.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {userText != null && (
+        <div className="px-3 pb-2">
+          <div className="text-xs text-neutral-500 mb-0.5">User commented:</div>
+          <div className="text-sm text-purple-300 bg-purple-950/40 rounded px-2 py-1.5 whitespace-pre-wrap break-words">
+            {userText}
+          </div>
+        </div>
+      )}
+      {comments.length > 0 && (
+        <div className="px-3 pb-2 space-y-1.5">
+          <div className="text-xs text-neutral-500">Feedback on specific parts:</div>
+          {comments.map((c, i) => (
+            <div key={i} className="rounded border border-purple-900/30 bg-purple-950/30 px-2.5 py-1.5">
+              <div className="text-xs text-purple-300/70 font-mono whitespace-pre-wrap break-words">{c.ref}</div>
+              <div className="text-sm text-neutral-200 mt-1 whitespace-pre-wrap break-words">{c.comment}</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
