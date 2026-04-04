@@ -263,16 +263,16 @@ function AssistantMessage({ entry, cwd, defaultModel }: { entry: EntryRaw; cwd: 
         <div className="text-xs text-neutral-500">{model}</div>
       )}
       {blocks.map((block, i) => (
-        <ContentBlockRenderer key={i} block={block} cwd={cwd} />
+        <ContentBlockRenderer key={i} block={block} cwd={cwd} markdown />
       ))}
     </div>
   );
 }
 
-function ContentBlockRenderer({ block, cwd, toolMap }: { block: ContentBlock; cwd: string; toolMap?: Map<string, ToolUseInfo> }) {
+function ContentBlockRenderer({ block, cwd, toolMap, markdown }: { block: ContentBlock; cwd: string; toolMap?: Map<string, ToolUseInfo>; markdown?: boolean }) {
   switch (block.type) {
     case "text":
-      return <TextBlock text={block.text ?? ""} cwd={cwd} />;
+      return <TextBlock text={block.text ?? ""} cwd={cwd} markdown={markdown} />;
     case "thinking":
       return <ThinkingBlock text={block.thinking ?? ""} />;
     case "tool_use":
@@ -322,7 +322,7 @@ function IdeTagBlock({ tagName, content, cwd }: { tagName: string; content: stri
   );
 }
 
-function TextBlock({ text, cwd }: { text: string; cwd: string }) {
+function TextBlock({ text, cwd, markdown }: { text: string; cwd: string; markdown?: boolean }) {
   const { segments, tags } = parseIdeTags(text);
   const hasIdeContent = tags.length > 0;
 
@@ -337,11 +337,15 @@ function TextBlock({ text, cwd }: { text: string; cwd: string }) {
 
   return (
     <div className="space-y-2">
-      {plainText && (
+      {plainText && (markdown ? (
+        <div className="text-sm leading-relaxed bg-neutral-900/30 rounded p-3 border border-neutral-800/50 prose prose-invert prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-li:my-0 prose-pre:bg-neutral-950/50 prose-code:text-emerald-300">
+          <Markdown remarkPlugins={[remarkGfm]}>{plainText}</Markdown>
+        </div>
+      ) : (
         <div className="text-sm whitespace-pre-wrap break-words leading-relaxed bg-neutral-900/30 rounded p-3 border border-neutral-800/50">
           {plainText}
         </div>
-      )}
+      ))}
       {hasIdeContent && (
         <div className="flex flex-wrap gap-1.5">
           {tags.map((tag, i) => (
