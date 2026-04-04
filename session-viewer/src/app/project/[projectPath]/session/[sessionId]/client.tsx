@@ -20,6 +20,7 @@ function DisplayItemView({
   item,
   projectPath,
   toolMap,
+  toolResultMap,
   reapplyKey,
   expandAll,
   defaultModel,
@@ -27,6 +28,7 @@ function DisplayItemView({
   item: DisplayItem;
   projectPath: string;
   toolMap: Map<string, ToolUseInfo>;
+  toolResultMap: Map<string, string>;
   reapplyKey: number;
   expandAll: boolean;
   defaultModel?: string;
@@ -38,6 +40,7 @@ function DisplayItemView({
         forceExpanded={expandAll || item.defaultExpanded}
         projectPath={projectPath}
         toolMap={toolMap}
+        toolResultMap={toolResultMap}
         defaultModel={defaultModel}
       />
     );
@@ -47,6 +50,7 @@ function DisplayItemView({
       group={item}
       projectPath={projectPath}
       toolMap={toolMap}
+      toolResultMap={toolResultMap}
       reapplyKey={reapplyKey}
       expandAll={expandAll}
       defaultModel={defaultModel}
@@ -58,6 +62,7 @@ function CollapsedGroupView({
   group,
   projectPath,
   toolMap,
+  toolResultMap,
   reapplyKey,
   expandAll,
   defaultModel,
@@ -65,6 +70,7 @@ function CollapsedGroupView({
   group: CollapsedGroup;
   projectPath: string;
   toolMap: Map<string, ToolUseInfo>;
+  toolResultMap: Map<string, string>;
   reapplyKey: number;
   expandAll: boolean;
   defaultModel?: string;
@@ -112,6 +118,7 @@ function CollapsedGroupView({
           item={item}
           projectPath={projectPath}
           toolMap={toolMap}
+          toolResultMap={toolResultMap}
           reapplyKey={reapplyKey}
           expandAll={expandAll}
           autoExpand={group.items.length === 1 && item.kind === "topical-group"}
@@ -126,6 +133,7 @@ function Layer2ItemView({
   item,
   projectPath,
   toolMap,
+  toolResultMap,
   reapplyKey,
   expandAll,
   autoExpand,
@@ -134,6 +142,7 @@ function Layer2ItemView({
   item: Layer2Item;
   projectPath: string;
   toolMap: Map<string, ToolUseInfo>;
+  toolResultMap: Map<string, string>;
   reapplyKey: number;
   expandAll: boolean;
   autoExpand?: boolean;
@@ -146,6 +155,7 @@ function Layer2ItemView({
         forceExpanded={expandAll || item.defaultExpanded}
         projectPath={projectPath}
         toolMap={toolMap}
+        toolResultMap={toolResultMap}
         defaultModel={defaultModel}
       />
     );
@@ -155,6 +165,7 @@ function Layer2ItemView({
       group={item}
       projectPath={projectPath}
       toolMap={toolMap}
+      toolResultMap={toolResultMap}
       reapplyKey={reapplyKey}
       expandAll={expandAll}
       autoExpand={autoExpand}
@@ -167,6 +178,7 @@ function TopicalGroupView({
   group,
   projectPath,
   toolMap,
+  toolResultMap,
   reapplyKey,
   expandAll,
   autoExpand,
@@ -175,6 +187,7 @@ function TopicalGroupView({
   group: TopicalGroup;
   projectPath: string;
   toolMap: Map<string, ToolUseInfo>;
+  toolResultMap: Map<string, string>;
   reapplyKey: number;
   expandAll: boolean;
   autoExpand?: boolean;
@@ -218,6 +231,7 @@ function TopicalGroupView({
             entry={entry}
             projectPath={projectPath}
             toolMap={toolMap}
+            toolResultMap={toolResultMap}
             defaultModel={defaultModel}
           />
         ))}
@@ -353,6 +367,28 @@ export function SessionClient({
     return map;
   }, [entries]);
 
+  const toolResultMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const entry of entries) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const blocks: unknown[] = (entry.raw as any)?.message?.content ?? [];
+      if (!Array.isArray(blocks)) continue;
+      for (const b of blocks as Array<Record<string, unknown>>) {
+        if (b.type === "tool_result" && typeof b.tool_use_id === "string") {
+          let content = "";
+          if (typeof b.content === "string") {
+            content = b.content;
+          } else if (Array.isArray(b.content)) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            content = (b.content as any[]).map((c) => (typeof c === "string" ? c : c.text ?? "")).join("\n");
+          }
+          map.set(b.tool_use_id, content);
+        }
+      }
+    }
+    return map;
+  }, [entries]);
+
   // Model usage stats: sorted desc by count, most common = default
   const { defaultModel, modelStats } = useMemo(() => {
     const counts = new Map<string, number>();
@@ -412,6 +448,7 @@ export function SessionClient({
             item={item}
             projectPath={projectPath}
             toolMap={toolMap}
+            toolResultMap={toolResultMap}
             reapplyKey={reapplyKey}
             expandAll={expandAll}
             defaultModel={defaultModel}

@@ -214,14 +214,14 @@ function toolDetailStr(name: string, input: Record<string, unknown> | undefined,
   return s;
 }
 
-export function MessageRenderer({ entry, cwd, toolMap, defaultModel }: { entry: EntryRaw; cwd?: string; toolMap?: Map<string, ToolUseInfo>; defaultModel?: string }) {
+export function MessageRenderer({ entry, cwd, toolMap, toolResultMap, defaultModel }: { entry: EntryRaw; cwd?: string; toolMap?: Map<string, ToolUseInfo>; toolResultMap?: Map<string, string>; defaultModel?: string }) {
   const type = entry.type ?? "unknown";
 
   switch (type) {
     case "user":
-      return <UserMessage entry={entry} cwd={cwd ?? ""} toolMap={toolMap} />;
+      return <UserMessage entry={entry} cwd={cwd ?? ""} toolMap={toolMap} toolResultMap={toolResultMap} />;
     case "assistant":
-      return <AssistantMessage entry={entry} cwd={cwd ?? ""} defaultModel={defaultModel} />;
+      return <AssistantMessage entry={entry} cwd={cwd ?? ""} toolResultMap={toolResultMap} defaultModel={defaultModel} />;
     case "system":
       return <SystemMessage entry={entry} />;
     case "progress":
@@ -239,7 +239,7 @@ export function MessageRenderer({ entry, cwd, toolMap, defaultModel }: { entry: 
   }
 }
 
-function UserMessage({ entry, cwd, toolMap }: { entry: EntryRaw; cwd: string; toolMap?: Map<string, ToolUseInfo> }) {
+function UserMessage({ entry, cwd, toolMap, toolResultMap }: { entry: EntryRaw; cwd: string; toolMap?: Map<string, ToolUseInfo>; toolResultMap?: Map<string, string> }) {
   const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
   return (
     <div className="space-y-2">
@@ -247,13 +247,13 @@ function UserMessage({ entry, cwd, toolMap }: { entry: EntryRaw; cwd: string; to
         <div className="text-xs text-neutral-500">role: {entry.message.role}</div>
       )}
       {blocks.map((block, i) => (
-        <ContentBlockRenderer key={i} block={block} cwd={cwd} toolMap={toolMap} />
+        <ContentBlockRenderer key={i} block={block} cwd={cwd} toolMap={toolMap} toolResultMap={toolResultMap} />
       ))}
     </div>
   );
 }
 
-function AssistantMessage({ entry, cwd, defaultModel }: { entry: EntryRaw; cwd: string; defaultModel?: string }) {
+function AssistantMessage({ entry, cwd, toolResultMap, defaultModel }: { entry: EntryRaw; cwd: string; toolResultMap?: Map<string, string>; defaultModel?: string }) {
   const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
   const model = entry.message?.model ? String(entry.message.model) : null;
   const showModel = model && model !== defaultModel;
@@ -263,13 +263,13 @@ function AssistantMessage({ entry, cwd, defaultModel }: { entry: EntryRaw; cwd: 
         <div className="text-xs text-neutral-500">{model}</div>
       )}
       {blocks.map((block, i) => (
-        <ContentBlockRenderer key={i} block={block} cwd={cwd} markdown />
+        <ContentBlockRenderer key={i} block={block} cwd={cwd} toolResultMap={toolResultMap} markdown />
       ))}
     </div>
   );
 }
 
-function ContentBlockRenderer({ block, cwd, toolMap, markdown }: { block: ContentBlock; cwd: string; toolMap?: Map<string, ToolUseInfo>; markdown?: boolean }) {
+function ContentBlockRenderer({ block, cwd, toolMap, toolResultMap, markdown }: { block: ContentBlock; cwd: string; toolMap?: Map<string, ToolUseInfo>; toolResultMap?: Map<string, string>; markdown?: boolean }) {
   switch (block.type) {
     case "text":
       return <TextBlock text={block.text ?? ""} cwd={cwd} markdown={markdown} />;
@@ -277,6 +277,7 @@ function ContentBlockRenderer({ block, cwd, toolMap, markdown }: { block: Conten
       return <ThinkingBlock text={block.thinking ?? ""} />;
     case "tool_use":
       if (isPlanToolUse(block)) return <PlanToolUseBlock block={block} />;
+      if (block.name === "AskUserQuestion") return <AskUserQuestionBlock block={block} toolResultMap={toolResultMap} />;
       return <ToolUseBlock block={block} cwd={cwd} />;
     case "tool_result":
       return <ToolResultBlock block={block} cwd={cwd} toolMap={toolMap} />;
@@ -478,6 +479,131 @@ function PlanToolUseBlock({ block }: { block: ContentBlock }) {
         <span className="font-semibold text-purple-300">Plan: {planName}</span>
         <span className="text-purple-400/60">{toolName.toLowerCase()}</span>
       </div>
+    </div>
+  );
+}
+
+interface QuestionDef {
+  question: string;
+  header?: string;
+  options: Array<{ label: string; description?: string; preview?: string }>;
+  multiSelect?: boolean;
+}
+
+/** Parse the structured answer string returned by AskUserQuestion tool results. */
+function parseAnswerString(content: string): Map<string, string> {
+  const answers = new Map<string, string>();
+  let body = content;
+  const prefix = "User has answered your questions: ";
+  if (body.startsWith(prefix)) body = body.slice(prefix.length);
+  const suffixIdx = body.lastIndexOf(". You can now continue");
+  if (suffixIdx >= 0) body = body.slice(0, suffixIdx);
+  const regex = /"([^"]*)"="([^"]*)"/g;
+  let match;
+  while ((match = regex.exec(body)) !== null) {
+    answers.set(match[1]!, match[2]!);
+  }
+  return answers;
+}
+
+function AskUserQuestionBlock({ block, toolResultMap }: { block: ContentBlock; toolResultMap?: Map<string, string> }) {
+  // Extract questions — support both `questions[]` array and single-question fallback
+  const questions: QuestionDef[] = [];
+  const rawQuestions = block.input?.questions;
+  if (Array.isArray(rawQuestions)) {
+    for (const q of rawQuestions) {
+      questions.push({
+        question: (q as Record<string, unknown>).question as string ?? "",
+        header: (q as Record<string, unknown>).header as string | undefined,
+        options: Array.isArray((q as Record<string, unknown>).options) ? (q as Record<string, unknown>).options as QuestionDef["options"] : [],
+        multiSelect: (q as Record<string, unknown>).multiSelect as boolean | undefined,
+      });
+    }
+  } else if (typeof block.input?.question === "string") {
+    questions.push({
+      question: block.input.question as string,
+      header: block.input.header as string | undefined,
+      options: Array.isArray(block.input.options) ? block.input.options as QuestionDef["options"] : [],
+      multiSelect: block.input.multiSelect as boolean | undefined,
+    });
+  }
+
+  // Parse the answer string from the tool result
+  const rawAnswer = block.id && toolResultMap ? toolResultMap.get(block.id) : undefined;
+  const answerMap = rawAnswer ? parseAnswerString(rawAnswer) : new Map<string, string>();
+
+  return (
+    <div className="border border-teal-900/50 rounded bg-teal-950/20">
+      {questions.map((q, qi) => {
+        const answer = answerMap.get(q.question);
+        const selections = answer != null && q.multiSelect
+          ? new Set(answer.split(", "))
+          : null;
+        const isOptionSelected = (label: string) =>
+          answer != null && (selections ? selections.has(label) : answer === label);
+        const allSelectionsMatchOptions = answer != null && (
+          selections
+            ? [...selections].every((s) => q.options.some((o) => o.label === s))
+            : q.options.some((o) => o.label === answer)
+        );
+        // For multiSelect, find any selection that didn't match an option
+        const otherText = answer != null && !allSelectionsMatchOptions
+          ? (selections
+              ? [...selections].filter((s) => !q.options.some((o) => o.label === s)).join(", ")
+              : answer)
+          : null;
+
+        return (
+          <div key={qi} className={`px-3 py-2 ${qi > 0 ? "border-t border-teal-900/30" : ""}`}>
+            {q.header && (
+              <div className="text-xs font-semibold text-teal-400 mb-1">{q.header}</div>
+            )}
+            <p className="text-sm text-neutral-200 mb-2">{q.question}</p>
+            {q.options.length > 0 && (
+              <div className="space-y-0.5">
+                {q.options.map((opt, oi) => {
+                  const isSelected = isOptionSelected(opt.label);
+                  const indicator = q.multiSelect
+                    ? (isSelected ? "\u2611" : "\u2610")
+                    : (isSelected ? "\u25C9" : "\u25CB");
+                  return (
+                    <div
+                      key={oi}
+                      className={`flex items-start gap-2 rounded px-2 py-1 text-sm ${
+                        isSelected ? "bg-teal-900/30" : ""
+                      }`}
+                    >
+                      <span className={`shrink-0 mt-0.5 ${isSelected ? "text-teal-300" : "text-neutral-600"}`}>
+                        {indicator}
+                      </span>
+                      <div className="min-w-0">
+                        <span className={isSelected ? "text-teal-200 font-medium" : "text-neutral-400"}>
+                          {opt.label}
+                        </span>
+                        {opt.description && (
+                          <span className="block text-xs text-neutral-500">{opt.description}</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {otherText != null && (
+              <div className={`flex items-start gap-2 rounded px-2 py-1 text-sm bg-teal-900/30 ${q.options.length > 0 ? "" : "mt-0"}`}>
+                <span className="shrink-0 mt-0.5 text-teal-300">
+                  {q.multiSelect ? "\u2611" : "\u25C9"}
+                </span>
+                <div className="min-w-0">
+                  <span className="text-teal-200 font-medium">Other</span>
+                  <span className="block text-xs text-neutral-500 mt-0.5">User commented:</span>
+                  <span className="block text-xs text-teal-300/80 whitespace-pre-wrap break-words">{otherText}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
