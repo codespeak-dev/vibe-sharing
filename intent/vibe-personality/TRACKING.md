@@ -2,6 +2,8 @@
 
 Status legend: ⬜ Not started | 📋 Planning | 🔨 Implementing | 🧪 Testing | ✅ Done
 
+[🔄 Sync from vibe-personality.md](cursor://anthropic.claude-code/open?prompt=Read%20and%20follow%20intent%2Fvibe-personality%2Fprompts%2Fsync.md)
+
 ## Ratios/Percentages
 
 | Status | Metric | Description | Plan | Next |
@@ -68,6 +70,7 @@ Status legend: ⬜ Not started | 📋 Planning | 🔨 Implementing | 🧪 Testin
 | ⬜ | Famous Instructions | Are you using Boris Cherny's instructions, or Karpathy's? | [plan](metrics/famous-instructions.md) | [▶ Plan](cursor://anthropic.claude-code/open?prompt=Read%20and%20follow%20intent%2Fvibe-personality%2Fprompts%2Fplan.md%20for%20metric%3A%20Famous%20Instructions%20%28famous-instructions.md%29) |
 | ⬜ | Received "Absolutely Right" | Agent told you "you are absolutely right" | [plan](metrics/received-absolutely-right.md) | [▶ Plan](cursor://anthropic.claude-code/open?prompt=Read%20and%20follow%20intent%2Fvibe-personality%2Fprompts%2Fplan.md%20for%20metric%3A%20Received%20Absolutely%20Right%20%28received-absolutely-right.md%29) |
 | ⬜ | Told "Absolutely Right" | You told the agent "you are absolutely right" | [plan](metrics/told-absolutely-right.md) | [▶ Plan](cursor://anthropic.claude-code/open?prompt=Read%20and%20follow%20intent%2Fvibe-personality%2Fprompts%2Fplan.md%20for%20metric%3A%20Told%20Absolutely%20Right%20%28told-absolutely-right.md%29) |
+| ⬜ | Capitalisation & Punctuation | Do you use capitalisation and punctuation | [plan](metrics/capitalisation.md) | [▶ Plan](cursor://anthropic.claude-code/open?prompt=Read%20and%20follow%20intent%2Fvibe-personality%2Fprompts%2Fplan.md%20for%20metric%3A%20Capitalisation%20%26%20Punctuation%20%28capitalisation.md%29) |
 
 ## Qualitative Analysis
 

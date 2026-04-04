@@ -32,6 +32,10 @@ cursor://anthropic.claude-code/open?prompt=<url-encoded prompt>
 ```
 Where the prompt is: `Read and follow intent/vibe-personality/prompts/<next-state>.md for metric: <Metric Name> (<metric-file>.md)`
 
+## Syncing new metrics
+
+When new metrics are added to `vibe-personality.md`, click the "🔄 Sync" link at the top of TRACKING.md (or run `prompts/sync.md`). This diffs the two files and adds missing metrics to TRACKING.md.
+
 ## Key references
 - Session JSONL format: see `permissions.md` for structure details
 - Existing parsing: `src/sessions/agents/claude.ts`
