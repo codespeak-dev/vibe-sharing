@@ -214,14 +214,14 @@ function toolDetailStr(name: string, input: Record<string, unknown> | undefined,
   return s;
 }
 
-export function MessageRenderer({ entry, cwd, toolMap }: { entry: EntryRaw; cwd?: string; toolMap?: Map<string, ToolUseInfo> }) {
+export function MessageRenderer({ entry, cwd, toolMap, defaultModel }: { entry: EntryRaw; cwd?: string; toolMap?: Map<string, ToolUseInfo>; defaultModel?: string }) {
   const type = entry.type ?? "unknown";
 
   switch (type) {
     case "user":
       return <UserMessage entry={entry} cwd={cwd ?? ""} toolMap={toolMap} />;
     case "assistant":
-      return <AssistantMessage entry={entry} cwd={cwd ?? ""} />;
+      return <AssistantMessage entry={entry} cwd={cwd ?? ""} defaultModel={defaultModel} />;
     case "system":
       return <SystemMessage entry={entry} />;
     case "progress":
@@ -253,12 +253,14 @@ function UserMessage({ entry, cwd, toolMap }: { entry: EntryRaw; cwd: string; to
   );
 }
 
-function AssistantMessage({ entry, cwd }: { entry: EntryRaw; cwd: string }) {
+function AssistantMessage({ entry, cwd, defaultModel }: { entry: EntryRaw; cwd: string; defaultModel?: string }) {
   const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
+  const model = entry.message?.model ? String(entry.message.model) : null;
+  const showModel = model && model !== defaultModel;
   return (
     <div className="space-y-2">
-      {entry.message?.model && (
-        <div className="text-xs text-neutral-500">{String(entry.message.model)}</div>
+      {showModel && (
+        <div className="text-xs text-neutral-500">{model}</div>
       )}
       {blocks.map((block, i) => (
         <ContentBlockRenderer key={i} block={block} cwd={cwd} />

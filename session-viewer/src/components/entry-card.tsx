@@ -45,7 +45,7 @@ function toolDetail(info: ToolUseInfo, cwd: string): string | null {
   return s;
 }
 
-export function EntryCard({ entry, forceExpanded, projectPath, toolMap }: { entry: SessionEntry; forceExpanded?: boolean; projectPath?: string; toolMap?: Map<string, ToolUseInfo> }) {
+export function EntryCard({ entry, forceExpanded, projectPath, toolMap, defaultModel }: { entry: SessionEntry; forceExpanded?: boolean; projectPath?: string; toolMap?: Map<string, ToolUseInfo>; defaultModel?: string }) {
   const canRender = hasRenderedView(entry.type);
   const headerOnly = isHeaderOnly(entry.raw);
   const displayType = getDisplayType(entry.raw);
@@ -166,7 +166,7 @@ export function EntryCard({ entry, forceExpanded, projectPath, toolMap }: { entr
       {showBody && (
         <div className="p-3 border-t border-neutral-800">
           {view === "rendered" ? (
-            <MessageRenderer entry={entry.raw} cwd={cwd} toolMap={toolMap} />
+            <MessageRenderer entry={entry.raw} cwd={cwd} toolMap={toolMap} defaultModel={defaultModel} />
           ) : (
             <JsonViewer data={entry.raw} defaultCollapsed={false} />
           )}

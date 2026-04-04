@@ -22,12 +22,14 @@ function DisplayItemView({
   toolMap,
   reapplyKey,
   expandAll,
+  defaultModel,
 }: {
   item: DisplayItem;
   projectPath: string;
   toolMap: Map<string, ToolUseInfo>;
   reapplyKey: number;
   expandAll: boolean;
+  defaultModel?: string;
 }) {
   if (item.kind === "entry") {
     return (
@@ -36,6 +38,7 @@ function DisplayItemView({
         forceExpanded={expandAll || item.defaultExpanded}
         projectPath={projectPath}
         toolMap={toolMap}
+        defaultModel={defaultModel}
       />
     );
   }
@@ -46,6 +49,7 @@ function DisplayItemView({
       toolMap={toolMap}
       reapplyKey={reapplyKey}
       expandAll={expandAll}
+      defaultModel={defaultModel}
     />
   );
 }
@@ -56,12 +60,14 @@ function CollapsedGroupView({
   toolMap,
   reapplyKey,
   expandAll,
+  defaultModel,
 }: {
   group: CollapsedGroup;
   projectPath: string;
   toolMap: Map<string, ToolUseInfo>;
   reapplyKey: number;
   expandAll: boolean;
+  defaultModel?: string;
 }) {
   const [expanded, setExpanded] = useState(expandAll);
   const reapplyRef = useRef(reapplyKey);
@@ -109,6 +115,7 @@ function CollapsedGroupView({
           reapplyKey={reapplyKey}
           expandAll={expandAll}
           autoExpand={group.items.length === 1 && item.kind === "topical-group"}
+          defaultModel={defaultModel}
         />
       ))}
     </div>
@@ -122,6 +129,7 @@ function Layer2ItemView({
   reapplyKey,
   expandAll,
   autoExpand,
+  defaultModel,
 }: {
   item: Layer2Item;
   projectPath: string;
@@ -129,6 +137,7 @@ function Layer2ItemView({
   reapplyKey: number;
   expandAll: boolean;
   autoExpand?: boolean;
+  defaultModel?: string;
 }) {
   if (item.kind === "entry") {
     return (
@@ -137,6 +146,7 @@ function Layer2ItemView({
         forceExpanded={expandAll || item.defaultExpanded}
         projectPath={projectPath}
         toolMap={toolMap}
+        defaultModel={defaultModel}
       />
     );
   }
@@ -148,6 +158,7 @@ function Layer2ItemView({
       reapplyKey={reapplyKey}
       expandAll={expandAll}
       autoExpand={autoExpand}
+      defaultModel={defaultModel}
     />
   );
 }
@@ -159,6 +170,7 @@ function TopicalGroupView({
   reapplyKey,
   expandAll,
   autoExpand,
+  defaultModel,
 }: {
   group: TopicalGroup;
   projectPath: string;
@@ -166,6 +178,7 @@ function TopicalGroupView({
   reapplyKey: number;
   expandAll: boolean;
   autoExpand?: boolean;
+  defaultModel?: string;
 }) {
   const [expanded, setExpanded] = useState(expandAll || !!autoExpand);
   const reapplyRef = useRef(reapplyKey);
@@ -205,6 +218,7 @@ function TopicalGroupView({
             entry={entry}
             projectPath={projectPath}
             toolMap={toolMap}
+            defaultModel={defaultModel}
           />
         ))}
       </div>
@@ -353,6 +367,21 @@ export function SessionClient({
     return map;
   }, [entries]);
 
+  // Model usage stats: sorted desc by count, most common = default
+  const { defaultModel, modelStats } = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const entry of entries) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const model = (entry.raw as any)?.message?.model;
+      if (typeof model === "string" && model) {
+        counts.set(model, (counts.get(model) ?? 0) + 1);
+      }
+    }
+    const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    const best = sorted[0]?.[0];
+    return { defaultModel: best, modelStats: sorted };
+  }, [entries]);
+
   const handleExpandAll = useCallback(() => setExpandAll(true), []);
   const handleReapply = useCallback(() => {
     setExpandAll(false);
@@ -373,6 +402,17 @@ export function SessionClient({
 
   return (
     <div>
+      {modelStats.length > 0 && (
+        <div className="text-xs text-neutral-500 mb-2 flex items-center gap-2 flex-wrap">
+          <span>Models:</span>
+          {modelStats.map(([model, count]) => (
+            <span key={model} className="text-neutral-400">
+              {model} <span className="text-neutral-600">x{count}</span>
+              {model === defaultModel && <span className="text-neutral-600 ml-1">(default)</span>}
+            </span>
+          ))}
+        </div>
+      )}
       <div className="flex items-center justify-between mb-2">
         <p className="text-sm text-neutral-500">
           Showing {entries.length} of {total} entries
@@ -388,6 +428,7 @@ export function SessionClient({
             toolMap={toolMap}
             reapplyKey={reapplyKey}
             expandAll={expandAll}
+            defaultModel={defaultModel}
           />
         ))}
       </div>
