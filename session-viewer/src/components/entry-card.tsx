@@ -53,6 +53,12 @@ export function EntryCard({ entry, forceExpanded, projectPath, toolMap, toolResu
   const [view, setView] = useState<"rendered" | "raw">(canRender ? "rendered" : "raw");
   const entryTag = classifyTag({ type: entry.type, raw: entry.raw } as ClassifyEntry);
   const colorClass = tagColor(entryTag);
+  // Color for the displayType badge based on raw role, so "assistant" is always green, "user" always blue
+  const ROLE_COLORS: Record<string, string> = {
+    user: "bg-blue-900/50 text-blue-300",
+    assistant: "bg-green-900/50 text-green-300",
+  };
+  const displayColorClass = ROLE_COLORS[displayType] ?? colorClass;
   const headerExtra = getHeaderExtra(entry.raw);
   const preview = getCollapsedPreview(entry.raw);
   const hasPlan = entryReferencesPlans(entry.raw);
@@ -122,7 +128,7 @@ export function EntryCard({ entry, forceExpanded, projectPath, toolMap, toolResu
         <span className={`text-[10px] font-mono w-8 text-right shrink-0 ${accentClass}`}>
           #{entry.lineIndex}
         </span>
-        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${colorClass}`}>
+        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${displayColorClass}`}>
           {displayType}
         </span>
         {hasPlan && (
