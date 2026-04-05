@@ -6,6 +6,19 @@
  * Layer 3: Collect non-primary items between primary items into collapsed groups
  */
 
+import {
+  classifyTag,
+  eType,
+  getToolNames,
+  type EntryTag,
+  type ClassifyEntry,
+} from "./classify";
+import { DEFAULT_PRIMARY_TAGS, DEFAULT_EXPANDED_TAGS } from "./message-type-registry";
+
+// Re-export so existing consumers don't need to change their import source
+export type { EntryTag } from "./classify";
+export { DEFAULT_PRIMARY_TAGS, DEFAULT_EXPANDED_TAGS };
+
 // ── Types ──────────────────────────────────────────────────────────
 
 export interface SessionEntry {
@@ -13,24 +26,6 @@ export interface SessionEntry {
   type: string;
   timestamp: string | null;
   raw: Record<string, unknown>;
-}
-
-interface ContentBlock {
-  type: string;
-  text?: string;
-  thinking?: string;
-  name?: string;
-  id?: string;
-  input?: Record<string, unknown>;
-  content?: string | ContentBlock[];
-  tool_use_id?: string;
-  [key: string]: unknown;
-}
-
-interface MessageContent {
-  role?: string;
-  content?: ContentBlock[];
-  [key: string]: unknown;
 }
 
 // ── Layer output types ─────────────────────────────────────────────
@@ -65,94 +60,12 @@ export type DisplayItem = ClassifiedEntry | CollapsedGroup;
 
 // ── Helpers ────────────────────────────────────────────────────────
 
-const PLANS_PATH = ".claude/plans/";
-const NOISE_TYPES = new Set(["progress", "queue-operation", "file-history-snapshot"]);
-
-function getBlocks(entry: SessionEntry): ContentBlock[] {
-  const msg = entry.raw.message as MessageContent | undefined;
-  return Array.isArray(msg?.content) ? msg.content : [];
-}
-
-function eType(entry: SessionEntry): string {
-  return (entry.raw.type as string) ?? entry.type ?? "unknown";
-}
-
-function hasToolUse(entry: SessionEntry): boolean {
-  return getBlocks(entry).some((b) => b.type === "tool_use");
-}
-
-function hasText(entry: SessionEntry): boolean {
-  return getBlocks(entry).some((b) => b.type === "text" && (b.text ?? "").trim().length > 0);
-}
-
-function isToolResultOnly(entry: SessionEntry): boolean {
-  const blocks = getBlocks(entry);
-  return eType(entry) === "user" && blocks.length > 0 && blocks.every((b) => b.type === "tool_result");
-}
-
-function getToolNames(entry: SessionEntry): string[] {
-  return getBlocks(entry).filter((b) => b.type === "tool_use" && b.name).map((b) => b.name!);
-}
-
-function toolNameIs(entry: SessionEntry, name: string): boolean {
-  return getBlocks(entry).some((b) => b.type === "tool_use" && b.name === name);
-}
-
-function isPlanEntry(entry: SessionEntry): boolean {
-  return getBlocks(entry).some(
-    (b) => b.type === "tool_use" && typeof b.input?.file_path === "string" && (b.input.file_path as string).includes(PLANS_PATH),
-  );
+/** Adapt SessionEntry to the ClassifyEntry interface expected by classifyTag. */
+function asClassifyEntry(entry: SessionEntry): ClassifyEntry {
+  return { type: entry.type, raw: entry.raw };
 }
 
 // ── Layer 1: Classification ────────────────────────────────────────
-
-export type EntryTag =
-  | "user-prompt"
-  | "assistant-text"
-  | "plan"
-  | "agent-question"
-  | "exit-plan-mode"
-  | "tool-call"
-  | "tool-result"
-  | "subagent"
-  | "noise"
-  | "filler"   // thinking-only assistant, system hooks
-  | "misc";
-
-function classifyTag(entry: SessionEntry): EntryTag {
-  const t = eType(entry);
-
-  if (t === "user") {
-    if (isToolResultOnly(entry)) return "tool-result";
-    return "user-prompt";
-  }
-
-  if (t === "assistant") {
-    if (hasToolUse(entry)) {
-      if (isPlanEntry(entry)) return "plan";
-      if (toolNameIs(entry, "AskUserQuestion")) return "agent-question";
-      if (toolNameIs(entry, "ExitPlanMode")) return "exit-plan-mode";
-      if (toolNameIs(entry, "Agent")) return "subagent";
-      return "tool-call";
-    }
-    if (hasText(entry)) return "assistant-text";
-    return "filler";
-  }
-
-  if (t === "system") return "filler";
-  if (NOISE_TYPES.has(t)) return "noise";
-  return "misc";
-}
-
-/** Which tags are primary interest by default? */
-export const DEFAULT_PRIMARY_TAGS = new Set<EntryTag>([
-  "user-prompt", "assistant-text", "plan", "agent-question", "exit-plan-mode",
-]);
-
-/** Which tags default to expanded cards? */
-export const DEFAULT_EXPANDED_TAGS = new Set<EntryTag>([
-  "user-prompt", "assistant-text", "plan", "agent-question", "exit-plan-mode",
-]);
 
 /** Overrides that can be passed from the filter UI. */
 export interface DisplayOverrides {
@@ -175,7 +88,7 @@ const TOPICAL_MAP: Partial<Record<EntryTag, TopicalGroupType>> = {
 const TOOL_GROUP_JOINERS = new Set<EntryTag>(["noise"]);
 
 function classify(entry: SessionEntry, overrides?: DisplayOverrides): ClassifiedEntry {
-  const tag = classifyTag(entry);
+  const tag = classifyTag(asClassifyEntry(entry));
   const isPrimary = overrides?.primary?.[tag] ?? DEFAULT_PRIMARY_TAGS.has(tag);
   const defaultExpanded = overrides?.expanded?.[tag] ?? DEFAULT_EXPANDED_TAGS.has(tag);
   return {
@@ -188,7 +101,7 @@ function classify(entry: SessionEntry, overrides?: DisplayOverrides): Classified
 
 /** Get the topical group type for an entry, or null if standalone. */
 function topicalType(entry: SessionEntry): TopicalGroupType | null {
-  return TOPICAL_MAP[classifyTag(entry)] ?? null;
+  return TOPICAL_MAP[classifyTag(asClassifyEntry(entry))] ?? null;
 }
 
 // ── Layer 2: Topical Grouping ──────────────────────────────────────
@@ -197,7 +110,7 @@ function topicalType(entry: SessionEntry): TopicalGroupType | null {
 function toolCallSummary(entries: SessionEntry[]): string {
   const counts = new Map<string, number>();
   for (const e of entries) {
-    for (const name of getToolNames(e)) {
+    for (const name of getToolNames(asClassifyEntry(e))) {
       const label = name === "Agent" ? "Subagent" : name;
       counts.set(label, (counts.get(label) ?? 0) + 1);
     }
@@ -209,7 +122,7 @@ function toolCallSummary(entries: SessionEntry[]): string {
 function noiseSummary(entries: SessionEntry[]): string {
   const counts = new Map<string, number>();
   for (const e of entries) {
-    const t = eType(e);
+    const t = eType(asClassifyEntry(e));
     counts.set(t, (counts.get(t) ?? 0) + 1);
   }
   return [...counts.entries()].map(([t, c]) => `${c} ${t}`).join(" + ");
@@ -238,7 +151,7 @@ function buildLayer2(entries: SessionEntry[], overrides?: DisplayOverrides): Lay
   };
 
   for (const entry of entries) {
-    const tag = classifyTag(entry);
+    const tag = classifyTag(asClassifyEntry(entry));
     const tt = topicalType(entry);
     const cls = classify(entry, overrides);
 
@@ -266,7 +179,7 @@ function buildLayer2(entries: SessionEntry[], overrides?: DisplayOverrides): Lay
 
     // System hooks (filler with type "system") can join an active tool-call group
     // but thinking-only entries break the group
-    if (tag === "filler" && eType(entry) === "system" && bufType === "tool-call") {
+    if (tag === "filler" && eType(asClassifyEntry(entry)) === "system" && bufType === "tool-call") {
       buf.push(entry);
       continue;
     }
@@ -336,7 +249,7 @@ function toolBreakdown(items: Layer2Item[]): string {
   for (const item of items) {
     const entries = item.kind === "entry" ? [item.entry] : item.entries;
     for (const e of entries) {
-      for (const name of getToolNames(e)) {
+      for (const name of getToolNames(asClassifyEntry(e))) {
         const label = name === "Agent" ? "Subagent" : name;
         counts.set(label, (counts.get(label) ?? 0) + 1);
       }

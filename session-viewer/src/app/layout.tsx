@@ -34,6 +34,9 @@ export default function RootLayout({
             Session Viewer
           </Link>
           <span className="text-xs text-neutral-500">AI coding sessions browser</span>
+          <Link href="/registry" className="text-xs text-neutral-500 hover:text-neutral-300 transition-colors ml-auto">
+            Registry
+          </Link>
         </header>
         <main className="flex-1 p-6">{children}</main>
       </body>
