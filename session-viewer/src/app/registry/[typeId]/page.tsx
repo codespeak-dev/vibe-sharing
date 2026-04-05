@@ -2,6 +2,7 @@ import Link from "next/link";
 import { REGISTRY } from "@/lib/message-type-registry";
 import type { EntryTag } from "@/lib/classify";
 import { openCache, getInstancesByTag } from "@/lib/cache-db";
+import { getPresetsForType } from "@/lib/group-state";
 import { RegistryInstancesClient } from "./client";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,7 @@ export default async function RegistryTypePage({
   // Load first page server-side — no client loading spinner needed
   const db = openCache();
   const { instances, total } = getInstancesByTag(db, spec.searchTag, 0, PAGE_SIZE);
+  const presets = getPresetsForType(typeId as EntryTag);
 
   return (
     <div>
@@ -44,6 +46,7 @@ export default async function RegistryTypePage({
       </div>
       <RegistryInstancesClient
         typeId={typeId as EntryTag}
+        presets={presets}
         initialInstances={instances}
         initialTotal={total}
       />

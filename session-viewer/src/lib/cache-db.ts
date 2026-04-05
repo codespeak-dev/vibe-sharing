@@ -528,6 +528,227 @@ export interface RegistryInstance {
   raw: Record<string, unknown>;
 }
 
+// ---------------------------------------------------------------------------
+// Registry grouping queries
+// ---------------------------------------------------------------------------
+
+export interface GroupCount {
+  key: string;
+  count: number;
+}
+
+/**
+ * Group entries by tag prefix. For example, visualTag="visual:tool-call" and
+ * tagPrefix="tool:" returns counts like { key: "Bash", count: 3269 }.
+ * Uses the indexed entry_tags table — fast path.
+ */
+export function getGroupsByTagPrefix(
+  db: Database.Database,
+  visualTag: string,
+  tagPrefix: string,
+): { groups: GroupCount[]; ungroupedCount: number; total: number } {
+  // Count entries that have at least one tag with the prefix
+  const groupRows = db
+    .prepare(
+      `SELECT SUBSTR(t2.tag, LENGTH(?) + 1) as group_key,
+              COUNT(DISTINCT t.file_path || ':' || t.line_index) as cnt
+       FROM entry_tags t
+       JOIN entry_tags t2 ON t.file_path = t2.file_path AND t.line_index = t2.line_index
+       WHERE t.tag = ?
+         AND t2.tag LIKE ? || '%'
+         AND LENGTH(t2.tag) > LENGTH(?)
+       GROUP BY t2.tag
+       ORDER BY cnt DESC`,
+    )
+    .all(tagPrefix, visualTag, tagPrefix, tagPrefix) as Array<{
+    group_key: string;
+    cnt: number;
+  }>;
+
+  const totalRow = db
+    .prepare(`SELECT COUNT(*) as cnt FROM entry_tags WHERE tag = ?`)
+    .get(visualTag) as { cnt: number };
+
+  const groupedCount = groupRows.reduce((sum, r) => sum + r.cnt, 0);
+
+  return {
+    groups: groupRows.map((r) => ({ key: r.group_key, count: r.cnt })),
+    ungroupedCount: totalRow.cnt - groupedCount,
+    total: totalRow.cnt,
+  };
+}
+
+/**
+ * Group entries by a json_extract path on raw_json. For example,
+ * visualTag="visual:user-prompt" and jsonPath="$.cwd" groups by working directory.
+ */
+export function getGroupsByJsonPath(
+  db: Database.Database,
+  visualTag: string,
+  jsonPath: string,
+): { groups: GroupCount[]; ungroupedCount: number; total: number } {
+  const rows = db
+    .prepare(
+      `SELECT json_extract(e.raw_json, ?) as group_key, COUNT(*) as cnt
+       FROM entries e
+       JOIN entry_tags t ON e.file_path = t.file_path AND e.line_index = t.line_index
+       WHERE t.tag = ?
+       GROUP BY group_key
+       ORDER BY cnt DESC`,
+    )
+    .all(jsonPath, visualTag) as Array<{
+    group_key: string | null;
+    cnt: number;
+  }>;
+
+  let ungroupedCount = 0;
+  const groups: GroupCount[] = [];
+  let total = 0;
+
+  for (const r of rows) {
+    total += r.cnt;
+    if (r.group_key === null || r.group_key === undefined) {
+      ungroupedCount += r.cnt;
+    } else {
+      groups.push({ key: String(r.group_key), count: r.cnt });
+    }
+  }
+
+  return { groups, ungroupedCount, total };
+}
+
+/**
+ * Get paginated instances filtered by both a visual tag AND a sub-tag.
+ * Used when drilling into a tag-prefix group (e.g., visual:tool-call + tool:Bash).
+ */
+export function getInstancesByTagAndSubTag(
+  db: Database.Database,
+  visualTag: string,
+  subTag: string,
+  offset: number,
+  limit: number,
+): { instances: RegistryInstance[]; total: number } {
+  const countRow = db
+    .prepare(
+      `SELECT COUNT(*) as cnt
+       FROM entry_tags t1
+       JOIN entry_tags t2 ON t1.file_path = t2.file_path AND t1.line_index = t2.line_index
+       WHERE t1.tag = ? AND t2.tag = ?`,
+    )
+    .get(visualTag, subTag) as { cnt: number };
+
+  const rows = db
+    .prepare(
+      `SELECT e.line_index, e.type, e.timestamp,
+              COALESCE(e.cwd, (SELECT e2.cwd FROM entries e2 WHERE e2.file_path = e.file_path AND e2.cwd IS NOT NULL LIMIT 1)) AS cwd,
+              e.raw_json, e.file_path, s.session_id, s.ai_title
+       FROM entries e
+       JOIN entry_tags t1 ON (e.file_path = t1.file_path AND e.line_index = t1.line_index)
+       JOIN entry_tags t2 ON (e.file_path = t2.file_path AND e.line_index = t2.line_index)
+       JOIN sessions s ON (e.file_path = s.file_path)
+       WHERE t1.tag = ? AND t2.tag = ?
+       ORDER BY e.timestamp DESC
+       LIMIT ? OFFSET ?`,
+    )
+    .all(visualTag, subTag, limit, offset) as Array<{
+    line_index: number;
+    type: string;
+    timestamp: string | null;
+    cwd: string | null;
+    raw_json: string;
+    file_path: string;
+    session_id: string;
+    ai_title: string | null;
+  }>;
+
+  return {
+    total: countRow.cnt,
+    instances: rows.map((r) => ({
+      filePath: r.file_path,
+      sessionId: r.session_id,
+      aiTitle: r.ai_title,
+      lineIndex: r.line_index,
+      type: r.type ?? "unknown",
+      timestamp: r.timestamp,
+      cwd: r.cwd,
+      raw: JSON.parse(r.raw_json),
+    })),
+  };
+}
+
+/**
+ * Get paginated instances where json_extract(raw_json, jsonPath) = value.
+ * Used when drilling into a json-path group.
+ * Pass value=null to get the "Ungrouped" entries.
+ */
+export function getInstancesByJsonPathValue(
+  db: Database.Database,
+  visualTag: string,
+  jsonPath: string,
+  value: string | null,
+  offset: number,
+  limit: number,
+): { instances: RegistryInstance[]; total: number } {
+  const whereClause =
+    value === null
+      ? `t.tag = ? AND json_extract(e.raw_json, ?) IS NULL`
+      : `t.tag = ? AND json_extract(e.raw_json, ?) = ?`;
+
+  const countParams =
+    value === null ? [visualTag, jsonPath] : [visualTag, jsonPath, value];
+
+  const countRow = db
+    .prepare(
+      `SELECT COUNT(*) as cnt
+       FROM entries e
+       JOIN entry_tags t ON e.file_path = t.file_path AND e.line_index = t.line_index
+       WHERE ${whereClause}`,
+    )
+    .get(...countParams) as { cnt: number };
+
+  const queryParams =
+    value === null
+      ? [visualTag, jsonPath, limit, offset]
+      : [visualTag, jsonPath, value, limit, offset];
+
+  const rows = db
+    .prepare(
+      `SELECT e.line_index, e.type, e.timestamp,
+              COALESCE(e.cwd, (SELECT e2.cwd FROM entries e2 WHERE e2.file_path = e.file_path AND e2.cwd IS NOT NULL LIMIT 1)) AS cwd,
+              e.raw_json, e.file_path, s.session_id, s.ai_title
+       FROM entries e
+       JOIN entry_tags t ON (e.file_path = t.file_path AND e.line_index = t.line_index)
+       JOIN sessions s ON (e.file_path = s.file_path)
+       WHERE ${whereClause}
+       ORDER BY e.timestamp DESC
+       LIMIT ? OFFSET ?`,
+    )
+    .all(...queryParams) as Array<{
+    line_index: number;
+    type: string;
+    timestamp: string | null;
+    cwd: string | null;
+    raw_json: string;
+    file_path: string;
+    session_id: string;
+    ai_title: string | null;
+  }>;
+
+  return {
+    total: countRow.cnt,
+    instances: rows.map((r) => ({
+      filePath: r.file_path,
+      sessionId: r.session_id,
+      aiTitle: r.ai_title,
+      lineIndex: r.line_index,
+      type: r.type ?? "unknown",
+      timestamp: r.timestamp,
+      cwd: r.cwd,
+      raw: JSON.parse(r.raw_json),
+    })),
+  };
+}
+
 /** Get paginated instances matching a visual tag across all sessions. */
 export function getInstancesByTag(
   db: Database.Database,
