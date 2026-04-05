@@ -6,3 +6,6 @@ dist/
 .DS_Store
 cdk.out/
 .envrc
+.session-viewer-cache.db
+.session-viewer-cache.db-wal
+.session-viewer-cache.db-shm

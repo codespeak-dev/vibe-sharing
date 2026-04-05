@@ -1,13 +1,13 @@
 import Database from "better-sqlite3";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { CLAUDE_DIR, CLAUDE_PROJECTS_DIR } from "codespeak-vibe-share/config";
+import { CLAUDE_PROJECTS_DIR } from "codespeak-vibe-share/config";
 import type { SessionMetadata } from "./session-metadata";
 import type { SessionEntry } from "../app/api/session-entries/route";
 import { classifyTag } from "./classify";
 import { REGISTRY } from "./message-type-registry";
 
-const DB_PATH = path.join(CLAUDE_DIR, ".session-viewer-cache.db");
+const DB_PATH = path.join(process.cwd(), "..", ".session-viewer-cache.db");
 
 /**
  * Bump this when computeTags changes so existing caches get rebuilt.
