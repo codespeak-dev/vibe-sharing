@@ -214,14 +214,14 @@ function toolDetailStr(name: string, input: Record<string, unknown> | undefined,
   return s;
 }
 
-export function MessageRenderer({ entry, cwd, toolMap, toolResultMap, defaultModel }: { entry: EntryRaw; cwd?: string; toolMap?: Map<string, ToolUseInfo>; toolResultMap?: Map<string, string>; defaultModel?: string }) {
+export function MessageRenderer({ entry, cwd, toolMap, toolResultMap, toolTimestamps, defaultModel }: { entry: EntryRaw; cwd?: string; toolMap?: Map<string, ToolUseInfo>; toolResultMap?: Map<string, string>; toolTimestamps?: Map<string, { useTs: string | null; resultTs: string | null }>; defaultModel?: string }) {
   const type = entry.type ?? "unknown";
 
   switch (type) {
     case "user":
       return <UserMessage entry={entry} cwd={cwd ?? ""} toolMap={toolMap} toolResultMap={toolResultMap} />;
     case "assistant":
-      return <AssistantMessage entry={entry} cwd={cwd ?? ""} toolResultMap={toolResultMap} defaultModel={defaultModel} />;
+      return <AssistantMessage entry={entry} cwd={cwd ?? ""} toolResultMap={toolResultMap} toolTimestamps={toolTimestamps} defaultModel={defaultModel} />;
     case "system":
       return <SystemMessage entry={entry} />;
     case "progress":
@@ -253,7 +253,9 @@ function UserMessage({ entry, cwd, toolMap, toolResultMap }: { entry: EntryRaw; 
   );
 }
 
-function AssistantMessage({ entry, cwd, toolResultMap, defaultModel }: { entry: EntryRaw; cwd: string; toolResultMap?: Map<string, string>; defaultModel?: string }) {
+type ToolTimestamps = Map<string, { useTs: string | null; resultTs: string | null }>;
+
+function AssistantMessage({ entry, cwd, toolResultMap, toolTimestamps, defaultModel }: { entry: EntryRaw; cwd: string; toolResultMap?: Map<string, string>; toolTimestamps?: ToolTimestamps; defaultModel?: string }) {
   const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
   const model = entry.message?.model ? String(entry.message.model) : null;
   const showModel = model && model !== defaultModel;
@@ -263,13 +265,13 @@ function AssistantMessage({ entry, cwd, toolResultMap, defaultModel }: { entry: 
         <div className="text-xs text-neutral-500">{model}</div>
       )}
       {blocks.map((block, i) => (
-        <ContentBlockRenderer key={i} block={block} cwd={cwd} toolResultMap={toolResultMap} markdown />
+        <ContentBlockRenderer key={i} block={block} cwd={cwd} toolResultMap={toolResultMap} toolTimestamps={toolTimestamps} markdown />
       ))}
     </div>
   );
 }
 
-function ContentBlockRenderer({ block, cwd, toolMap, toolResultMap, markdown }: { block: ContentBlock; cwd: string; toolMap?: Map<string, ToolUseInfo>; toolResultMap?: Map<string, string>; markdown?: boolean }) {
+function ContentBlockRenderer({ block, cwd, toolMap, toolResultMap, toolTimestamps, markdown }: { block: ContentBlock; cwd: string; toolMap?: Map<string, ToolUseInfo>; toolResultMap?: Map<string, string>; toolTimestamps?: ToolTimestamps; markdown?: boolean }) {
   switch (block.type) {
     case "text":
       return <TextBlock text={block.text ?? ""} cwd={cwd} markdown={markdown} />;
@@ -279,9 +281,14 @@ function ContentBlockRenderer({ block, cwd, toolMap, toolResultMap, markdown }: 
       if (isPlanToolUse(block)) return <PlanToolUseBlock block={block} />;
       if (block.name === "AskUserQuestion") return <AskUserQuestionBlock block={block} toolResultMap={toolResultMap} />;
       if (block.name === "ExitPlanMode") return <ExitPlanModeBlock block={block} toolResultMap={toolResultMap} />;
+      if (block.name === "Agent") return <SubagentToolUseBlock block={block} toolResultMap={toolResultMap} toolTimestamps={toolTimestamps} />;
       return <ToolUseBlock block={block} cwd={cwd} />;
-    case "tool_result":
+    case "tool_result": {
+      // Check if this is a subagent result
+      const resolvedTool = block.tool_use_id && toolMap ? toolMap.get(block.tool_use_id) : undefined;
+      if (resolvedTool?.name === "Agent") return <SubagentToolResultBlock block={block} toolMap={toolMap} />;
       return <ToolResultBlock block={block} cwd={cwd} toolMap={toolMap} />;
+    }
     default:
       return (
         <div className="text-xs text-neutral-500 border border-neutral-800 rounded p-2">
@@ -406,6 +413,101 @@ function ToolUseBlock({ block, cwd }: { block: ContentBlock; cwd: string }) {
         <pre className="px-3 pb-3 text-xs text-neutral-400 font-mono whitespace-pre-wrap break-words max-h-96 overflow-y-auto">
           {inputStr}
         </pre>
+      )}
+    </div>
+  );
+}
+
+function formatDuration(startIso: string, endIso: string): string | null {
+  try {
+    const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
+    if (ms <= 0 || isNaN(ms)) return null;
+    if (ms < 1000) return `${Math.round(ms)}ms`;
+    const sec = Math.floor(ms / 1000);
+    if (sec < 60) return `${sec}s`;
+    const min = Math.floor(sec / 60);
+    const remSec = sec % 60;
+    return remSec > 0 ? `${min}m ${remSec}s` : `${min}m`;
+  } catch { return null; }
+}
+
+function SubagentToolUseBlock({ block, toolResultMap, toolTimestamps }: { block: ContentBlock; toolResultMap?: Map<string, string>; toolTimestamps?: ToolTimestamps }) {
+  const input = block.input ?? {};
+  const description = (input.description as string) ?? "";
+  const prompt = (input.prompt as string) ?? "";
+  const subagentType = (input.subagent_type as string) ?? "";
+  const toolUseId = block.id ?? "";
+  const result = toolUseId && toolResultMap ? toolResultMap.get(toolUseId) : undefined;
+  const timestamps = toolUseId && toolTimestamps ? toolTimestamps.get(toolUseId) : undefined;
+  const duration = timestamps?.useTs && timestamps?.resultTs
+    ? formatDuration(timestamps.useTs, timestamps.resultTs)
+    : null;
+
+  return (
+    <div className="border border-cyan-900/40 rounded bg-cyan-950/20">
+      <div className="px-3 py-1.5 text-xs flex items-center gap-2">
+        <span className="font-semibold text-cyan-400">
+          Subagent{subagentType ? `: ${subagentType}` : ""}
+        </span>
+        {description && (
+          <span className="text-neutral-400 truncate">{truncate(description, 80)}</span>
+        )}
+      </div>
+      {prompt && (
+        <>
+          <div className="px-3 py-1 text-[10px] text-cyan-600 font-semibold border-t border-cyan-900/30">
+            Prompt
+          </div>
+          <div className="px-3 pb-3 max-h-[400px] overflow-y-auto prose prose-invert prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-li:my-0 prose-pre:bg-neutral-950/50 prose-code:text-emerald-300">
+            <Markdown remarkPlugins={[remarkGfm]}>{prompt}</Markdown>
+          </div>
+        </>
+      )}
+      {duration && (
+        <div className="px-3 py-1.5 text-[10px] text-neutral-500 italic border-t border-cyan-900/30">
+          Worked for {duration}
+        </div>
+      )}
+      {result && (
+        <>
+          <div className="px-3 py-1 text-[10px] text-cyan-600 font-semibold border-t border-cyan-900/30">
+            Result
+          </div>
+          <div className="px-3 pb-3 max-h-[400px] overflow-y-auto prose prose-invert prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-li:my-0 prose-pre:bg-neutral-950/50 prose-code:text-emerald-300">
+            <Markdown remarkPlugins={[remarkGfm]}>{result}</Markdown>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function SubagentToolResultBlock({ block, toolMap }: { block: ContentBlock; toolMap?: Map<string, ToolUseInfo> }) {
+  let content = "";
+  if (typeof block.content === "string") {
+    content = block.content;
+  } else if (Array.isArray(block.content)) {
+    content = block.content
+      .map((c) => (typeof c === "string" ? c : c.text ?? JSON.stringify(c)))
+      .join("\n");
+  }
+
+  // Get the tool name to check if this is a subagent result
+  const resolved = block.tool_use_id && toolMap ? toolMap.get(block.tool_use_id) : undefined;
+  const description = resolved?.input?.description as string | undefined;
+
+  return (
+    <div className="border border-cyan-900/30 rounded bg-cyan-950/10">
+      <div className="px-3 py-1.5 text-xs flex items-center gap-2">
+        <span className="text-cyan-500 font-semibold">Subagent result</span>
+        {description && (
+          <span className="text-neutral-500 truncate">{truncate(description, 60)}</span>
+        )}
+      </div>
+      {content && (
+        <div className="px-3 pb-3 max-h-[600px] overflow-y-auto prose prose-invert prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-li:my-0 prose-pre:bg-neutral-950/50 prose-code:text-emerald-300">
+          <Markdown remarkPlugins={[remarkGfm]}>{content}</Markdown>
+        </div>
       )}
     </div>
   );

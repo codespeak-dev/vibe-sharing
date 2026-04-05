@@ -45,7 +45,12 @@ function toolDetail(info: ToolUseInfo, cwd: string): string | null {
   return s;
 }
 
-export function EntryCard({ entry, forceExpanded, projectPath, toolMap, toolResultMap, defaultModel }: { entry: SessionEntry; forceExpanded?: boolean; projectPath?: string; toolMap?: Map<string, ToolUseInfo>; toolResultMap?: Map<string, string>; defaultModel?: string }) {
+export interface SubagentLinks {
+  callToResult: Map<number, number>;
+  resultToCall: Map<number, number>;
+}
+
+export function EntryCard({ entry, forceExpanded, projectPath, toolMap, toolResultMap, toolTimestamps, defaultModel, subagentLinks }: { entry: SessionEntry; forceExpanded?: boolean; projectPath?: string; toolMap?: Map<string, ToolUseInfo>; toolResultMap?: Map<string, string>; toolTimestamps?: Map<string, { useTs: string | null; resultTs: string | null }>; defaultModel?: string; subagentLinks?: SubagentLinks }) {
   const canRender = hasRenderedView(entry.type);
   const headerOnly = isHeaderOnly(entry.raw);
   const displayType = getDisplayType(entry.raw);
@@ -72,11 +77,24 @@ export function EntryCard({ entry, forceExpanded, projectPath, toolMap, toolResu
   const toolInfos: Array<{ name: string; detail: string | null }> = [];
   for (const b of contentBlocks) {
     if (b.type === "tool_use" && typeof b.name === "string") {
-      toolInfos.push({ name: b.name, detail: toolDetail({ name: b.name, input: b.input as Record<string, unknown> | undefined }, cwd) });
+      const inp = b.input as Record<string, unknown> | undefined;
+      // For Agent/Subagent, show type + description
+      const subagentType = inp?.subagent_type as string | undefined;
+      const displayName = b.name === "Agent"
+        ? (subagentType ? `Subagent:${subagentType}` : "Subagent")
+        : b.name;
+      const detail = b.name === "Agent"
+        ? (inp?.description as string) ?? (inp?.prompt as string)?.slice(0, 80) ?? null
+        : toolDetail({ name: b.name, input: inp }, cwd);
+      toolInfos.push({ name: displayName, detail });
     } else if (b.type === "tool_result" && typeof b.tool_use_id === "string" && toolMap) {
       const info = toolMap.get(b.tool_use_id);
       if (info) {
-        toolInfos.push({ name: info.name, detail: toolDetail(info, cwd) });
+        const displayName = info.name === "Agent" ? "Subagent" : info.name;
+        const detail = info.name === "Agent"
+          ? (info.input?.description as string) ?? (info.input?.prompt as string)?.slice(0, 80) ?? null
+          : toolDetail(info, cwd);
+        toolInfos.push({ name: displayName, detail });
       }
     }
   }
@@ -144,6 +162,25 @@ export function EntryCard({ entry, forceExpanded, projectPath, toolMap, toolResu
             {toolInfos.map((t) => t.detail).filter(Boolean).join(", ")}
           </span>
         )}
+        {/* Subagent cross-links */}
+        {subagentLinks?.callToResult.has(entry.lineIndex) && (
+          <a
+            href={`#entry-${subagentLinks.callToResult.get(entry.lineIndex)}`}
+            className="text-[10px] text-cyan-500 hover:text-cyan-300 shrink-0 transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          >
+            → result #{subagentLinks.callToResult.get(entry.lineIndex)}
+          </a>
+        )}
+        {subagentLinks?.resultToCall.has(entry.lineIndex) && (
+          <a
+            href={`#entry-${subagentLinks.resultToCall.get(entry.lineIndex)}`}
+            className="text-[10px] text-cyan-500 hover:text-cyan-300 shrink-0 transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          >
+            ← call #{subagentLinks.resultToCall.get(entry.lineIndex)}
+          </a>
+        )}
         {toolInfos.length === 0 && preview && !headerExtra && (
           <span className="text-[10px] text-neutral-500 truncate">{truncate(preview, 120)}</span>
         )}
@@ -185,7 +222,7 @@ export function EntryCard({ entry, forceExpanded, projectPath, toolMap, toolResu
       {showBody && (
         <div className={`p-3 border-t ${isUser ? "border-blue-800/30" : isAssistant ? "border-green-800/30" : "border-neutral-800"}`}>
           {view === "rendered" ? (
-            <MessageRenderer entry={entry.raw} cwd={cwd} toolMap={toolMap} toolResultMap={toolResultMap} defaultModel={defaultModel} />
+            <MessageRenderer entry={entry.raw} cwd={cwd} toolMap={toolMap} toolResultMap={toolResultMap} toolTimestamps={toolTimestamps} defaultModel={defaultModel} />
           ) : (
             <JsonViewer data={entry.raw} defaultCollapsed={false} />
           )}

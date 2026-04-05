@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { EntryCard } from "@/components/entry-card";
+import { EntryCard, type SubagentLinks } from "@/components/entry-card";
 import { FilterBar } from "@/components/filter-bar";
 import { type ToolUseInfo } from "@/components/message-renderer";
 import {
@@ -23,17 +23,21 @@ function DisplayItemView({
   projectPath,
   toolMap,
   toolResultMap,
+  toolTimestamps,
   reapplyKey,
   expandAll,
   defaultModel,
+  subagentLinks,
 }: {
   item: DisplayItem;
   projectPath: string;
   toolMap: Map<string, ToolUseInfo>;
   toolResultMap: Map<string, string>;
+  toolTimestamps: Map<string, { useTs: string | null; resultTs: string | null }>;
   reapplyKey: number;
   expandAll: boolean;
   defaultModel?: string;
+  subagentLinks?: SubagentLinks;
 }) {
   if (item.kind === "entry") {
     return (
@@ -43,7 +47,9 @@ function DisplayItemView({
         projectPath={projectPath}
         toolMap={toolMap}
         toolResultMap={toolResultMap}
+            toolTimestamps={toolTimestamps}
         defaultModel={defaultModel}
+        subagentLinks={subagentLinks}
       />
     );
   }
@@ -53,9 +59,11 @@ function DisplayItemView({
       projectPath={projectPath}
       toolMap={toolMap}
       toolResultMap={toolResultMap}
+            toolTimestamps={toolTimestamps}
       reapplyKey={reapplyKey}
       expandAll={expandAll}
       defaultModel={defaultModel}
+      subagentLinks={subagentLinks}
     />
   );
 }
@@ -65,17 +73,21 @@ function CollapsedGroupView({
   projectPath,
   toolMap,
   toolResultMap,
+  toolTimestamps,
   reapplyKey,
   expandAll,
   defaultModel,
+  subagentLinks,
 }: {
   group: CollapsedGroup;
   projectPath: string;
   toolMap: Map<string, ToolUseInfo>;
   toolResultMap: Map<string, string>;
+  toolTimestamps: Map<string, { useTs: string | null; resultTs: string | null }>;
   reapplyKey: number;
   expandAll: boolean;
   defaultModel?: string;
+  subagentLinks?: SubagentLinks;
 }) {
   const [expanded, setExpanded] = useState(expandAll);
   const reapplyRef = useRef(reapplyKey);
@@ -95,7 +107,7 @@ function CollapsedGroupView({
         onClick={() => setExpanded(true)}
         className="w-full flex items-center gap-2 text-[11px] text-neutral-600 hover:text-neutral-400 py-1.5 px-3 cursor-pointer transition-colors border border-neutral-800/50 rounded-lg hover:border-neutral-700"
       >
-        <span className="text-[10px] text-neutral-600 font-mono shrink-0">▸ {group.entryCount}</span>
+        <span className="text-[10px] text-neutral-600 font-mono shrink-0">▸ {group.entryCount} cards</span>
         <span className="flex-1">{group.summary}</span>
         {group.duration && (
           <span className="text-[10px] text-neutral-600 shrink-0">{group.duration}</span>
@@ -110,7 +122,7 @@ function CollapsedGroupView({
         onClick={() => setExpanded(false)}
         className="w-full flex items-center gap-2 text-[11px] text-neutral-500 hover:text-neutral-300 py-1 px-1 cursor-pointer transition-colors"
       >
-        <span className="text-[10px] text-neutral-500 font-mono shrink-0">▾ {group.entryCount}</span>
+        <span className="text-[10px] text-neutral-500 font-mono shrink-0">▾ {group.entryCount} cards</span>
         <span className="flex-1">{group.summary}</span>
         {group.duration && (
           <span className="text-[10px] text-neutral-600 shrink-0">{group.duration}</span>
@@ -123,10 +135,12 @@ function CollapsedGroupView({
           projectPath={projectPath}
           toolMap={toolMap}
           toolResultMap={toolResultMap}
+            toolTimestamps={toolTimestamps}
           reapplyKey={reapplyKey}
           expandAll={expandAll}
           autoExpand={group.items.length === 1 && item.kind === "topical-group"}
           defaultModel={defaultModel}
+          subagentLinks={subagentLinks}
         />
       ))}
     </div>
@@ -138,19 +152,23 @@ function Layer2ItemView({
   projectPath,
   toolMap,
   toolResultMap,
+  toolTimestamps,
   reapplyKey,
   expandAll,
   autoExpand,
   defaultModel,
+  subagentLinks,
 }: {
   item: Layer2Item;
   projectPath: string;
   toolMap: Map<string, ToolUseInfo>;
   toolResultMap: Map<string, string>;
+  toolTimestamps: Map<string, { useTs: string | null; resultTs: string | null }>;
   reapplyKey: number;
   expandAll: boolean;
   autoExpand?: boolean;
   defaultModel?: string;
+  subagentLinks?: SubagentLinks;
 }) {
   if (item.kind === "entry") {
     return (
@@ -160,7 +178,9 @@ function Layer2ItemView({
         projectPath={projectPath}
         toolMap={toolMap}
         toolResultMap={toolResultMap}
+            toolTimestamps={toolTimestamps}
         defaultModel={defaultModel}
+        subagentLinks={subagentLinks}
       />
     );
   }
@@ -170,10 +190,12 @@ function Layer2ItemView({
       projectPath={projectPath}
       toolMap={toolMap}
       toolResultMap={toolResultMap}
+            toolTimestamps={toolTimestamps}
       reapplyKey={reapplyKey}
       expandAll={expandAll}
       autoExpand={autoExpand}
       defaultModel={defaultModel}
+      subagentLinks={subagentLinks}
     />
   );
 }
@@ -183,19 +205,23 @@ function TopicalGroupView({
   projectPath,
   toolMap,
   toolResultMap,
+  toolTimestamps,
   reapplyKey,
   expandAll,
   autoExpand,
   defaultModel,
+  subagentLinks,
 }: {
   group: TopicalGroup;
   projectPath: string;
   toolMap: Map<string, ToolUseInfo>;
   toolResultMap: Map<string, string>;
+  toolTimestamps: Map<string, { useTs: string | null; resultTs: string | null }>;
   reapplyKey: number;
   expandAll: boolean;
   autoExpand?: boolean;
   defaultModel?: string;
+  subagentLinks?: SubagentLinks;
 }) {
   const [expanded, setExpanded] = useState(expandAll || !!autoExpand);
   const reapplyRef = useRef(reapplyKey);
@@ -236,7 +262,9 @@ function TopicalGroupView({
             projectPath={projectPath}
             toolMap={toolMap}
             toolResultMap={toolResultMap}
+            toolTimestamps={toolTimestamps}
             defaultModel={defaultModel}
+            subagentLinks={subagentLinks}
           />
         ))}
       </div>
@@ -416,6 +444,69 @@ export function SessionClient({
     return map;
   }, [entries]);
 
+  // Map tool_use_id → { useTimestamp, resultTimestamp } for computing durations
+  const toolTimestamps = useMemo(() => {
+    const useTs = new Map<string, string>(); // tool_use_id → timestamp of the entry containing tool_use
+    const resultTs = new Map<string, string>(); // tool_use_id → timestamp of the entry containing tool_result
+    for (const entry of entries) {
+      const ts = entry.timestamp;
+      if (!ts) continue;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const blocks: unknown[] = (entry.raw as any)?.message?.content ?? [];
+      if (!Array.isArray(blocks)) continue;
+      for (const b of blocks as Array<Record<string, unknown>>) {
+        if (b.type === "tool_use" && typeof b.id === "string") {
+          useTs.set(b.id, ts);
+        }
+        if (b.type === "tool_result" && typeof b.tool_use_id === "string") {
+          resultTs.set(b.tool_use_id, ts);
+        }
+      }
+    }
+    // Combine into a single map
+    const combined = new Map<string, { useTs: string | null; resultTs: string | null }>();
+    for (const [id, t] of useTs) combined.set(id, { useTs: t, resultTs: resultTs.get(id) ?? null });
+    for (const [id, t] of resultTs) {
+      if (!combined.has(id)) combined.set(id, { useTs: null, resultTs: t });
+    }
+    return combined;
+  }, [entries]);
+
+  // Subagent cross-references: maps entry lineIndex of call → lineIndex of result, and vice versa.
+  // Also maps call lineIndex → tool_use_id for linking.
+  const subagentLinks = useMemo(() => {
+    // First pass: find all Agent tool_use blocks with their entry lineIndex and tool_use_id
+    const callsByToolId = new Map<string, number>(); // tool_use_id → call entry lineIndex
+    for (const entry of entries) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const blocks: unknown[] = (entry.raw as any)?.message?.content ?? [];
+      if (!Array.isArray(blocks)) continue;
+      for (const b of blocks as Array<Record<string, unknown>>) {
+        if (b.type === "tool_use" && b.name === "Agent" && typeof b.id === "string") {
+          callsByToolId.set(b.id, entry.lineIndex);
+        }
+      }
+    }
+    // Second pass: find tool_result blocks that match
+    const callToResult = new Map<number, number>(); // call lineIndex → result lineIndex
+    const resultToCall = new Map<number, number>(); // result lineIndex → call lineIndex
+    for (const entry of entries) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const blocks: unknown[] = (entry.raw as any)?.message?.content ?? [];
+      if (!Array.isArray(blocks)) continue;
+      for (const b of blocks as Array<Record<string, unknown>>) {
+        if (b.type === "tool_result" && typeof b.tool_use_id === "string") {
+          const callLineIndex = callsByToolId.get(b.tool_use_id);
+          if (callLineIndex !== undefined) {
+            callToResult.set(callLineIndex, entry.lineIndex);
+            resultToCall.set(entry.lineIndex, callLineIndex);
+          }
+        }
+      }
+    }
+    return { callToResult, resultToCall };
+  }, [entries]);
+
   // Model usage stats: sorted desc by count, most common = default
   const { defaultModel, modelStats } = useMemo(() => {
     const counts = new Map<string, number>();
@@ -476,9 +567,11 @@ export function SessionClient({
             projectPath={projectPath}
             toolMap={toolMap}
             toolResultMap={toolResultMap}
+            toolTimestamps={toolTimestamps}
             reapplyKey={reapplyKey}
             expandAll={expandAll}
             defaultModel={defaultModel}
+            subagentLinks={subagentLinks}
           />
         ))}
       </div>

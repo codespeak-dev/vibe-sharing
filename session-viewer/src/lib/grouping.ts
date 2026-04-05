@@ -160,14 +160,19 @@ export interface DisplayOverrides {
   expanded?: Partial<Record<EntryTag, boolean>>;
 }
 
-/** Which tags participate in topical grouping, and what group type? */
+/** Which tags participate in topical grouping, and what group type?
+ *  Subagents are NOT grouped with tool calls — they stay standalone.
+ *  Filler (thinking-only) does NOT join tool-call groups — thinking breaks the run.
+ *  Only system hooks and noise can sit inside a tool-call group without breaking it. */
 const TOPICAL_MAP: Partial<Record<EntryTag, TopicalGroupType>> = {
   "tool-call": "tool-call",
   "tool-result": "tool-call",
-  "subagent": "tool-call",
-  "filler": "tool-call",   // filler joins whatever group surrounds it
   "noise": "noise",
 };
+
+/** Tags that can sit inside an active tool-call group without breaking it.
+ *  Thinking-only assistant entries ("filler") are NOT included — they break tool runs. */
+const TOOL_GROUP_JOINERS = new Set<EntryTag>(["noise"]);
 
 function classify(entry: SessionEntry, overrides?: DisplayOverrides): ClassifiedEntry {
   const tag = classifyTag(entry);
@@ -188,17 +193,17 @@ function topicalType(entry: SessionEntry): TopicalGroupType | null {
 
 // ── Layer 2: Topical Grouping ──────────────────────────────────────
 
+/** Topical group summary: e.g. "1 Read" or "3 Read, 2 Bash". */
 function toolCallSummary(entries: SessionEntry[]): string {
   const counts = new Map<string, number>();
   for (const e of entries) {
     for (const name of getToolNames(e)) {
-      counts.set(name, (counts.get(name) ?? 0) + 1);
+      const label = name === "Agent" ? "Subagent" : name;
+      counts.set(label, (counts.get(label) ?? 0) + 1);
     }
   }
-  const total = [...counts.values()].reduce((a, b) => a + b, 0);
-  if (total === 0) return `${entries.length} entries`;
-  const breakdown = [...counts.entries()].map(([n, c]) => `${n}(${c})`).join(" ");
-  return `${total} tool call${total === 1 ? "" : "s"}  ${breakdown}`;
+  if (counts.size === 0) return `${entries.length} entries`;
+  return [...counts.entries()].map(([n, c]) => `${c} ${n}`).join(", ");
 }
 
 function noiseSummary(entries: SessionEntry[]): string {
@@ -233,6 +238,7 @@ function buildLayer2(entries: SessionEntry[], overrides?: DisplayOverrides): Lay
   };
 
   for (const entry of entries) {
+    const tag = classifyTag(entry);
     const tt = topicalType(entry);
     const cls = classify(entry, overrides);
 
@@ -243,40 +249,35 @@ function buildLayer2(entries: SessionEntry[], overrides?: DisplayOverrides): Lay
       continue;
     }
 
-    // Entry wants to join a topical group
+    // Entry has an explicit topical group type (tool-call, tool-result, noise)
     if (tt !== null) {
-      // Filler is special: it joins whatever group is active, or starts noise
-      const effectiveType: TopicalGroupType | null =
-        (tt === "tool-call" && classifyTag(entry) === "filler" && bufType === "noise")
-          ? "noise"
-          : (tt === "tool-call" && classifyTag(entry) === "filler" && bufType === null)
-          ? null  // standalone filler when no group active → treat as standalone
-          : tt;
-
-      if (effectiveType === null) {
-        // No active group and filler can't start one → standalone
-        flush();
-        items.push(cls);
-        continue;
-      }
-
-      if (bufType === effectiveType) {
-        // Same group type — accumulate
+      if (bufType === tt) {
         buf.push(entry);
       } else if (bufType === null) {
-        // Start new group
-        bufType = effectiveType;
+        bufType = tt;
         buf = [entry];
       } else {
-        // Different group type — flush old, start new
         flush();
-        bufType = effectiveType;
+        bufType = tt;
         buf = [entry];
       }
       continue;
     }
 
-    // No topical group → standalone
+    // System hooks (filler with type "system") can join an active tool-call group
+    // but thinking-only entries break the group
+    if (tag === "filler" && eType(entry) === "system" && bufType === "tool-call") {
+      buf.push(entry);
+      continue;
+    }
+
+    // Noise entries can sit inside an active tool-call group
+    if (TOOL_GROUP_JOINERS.has(tag) && bufType === "tool-call") {
+      buf.push(entry);
+      continue;
+    }
+
+    // Everything else is standalone — flush and emit
     flush();
     items.push(cls);
   }
@@ -329,17 +330,32 @@ function groupDuration(items: Layer2Item[]): string | null {
   return formatDurationMs(maxTs - minTs);
 }
 
-function collapsedSummary(items: Layer2Item[]): string {
-  const parts: string[] = [];
+/** Aggregate tool breakdown across all items in a collapsed group. */
+function toolBreakdown(items: Layer2Item[]): string {
+  const counts = new Map<string, number>();
   for (const item of items) {
-    if (item.kind === "topical-group") {
-      parts.push(item.summary);
+    const entries = item.kind === "entry" ? [item.entry] : item.entries;
+    for (const e of entries) {
+      for (const name of getToolNames(e)) {
+        const label = name === "Agent" ? "Subagent" : name;
+        counts.set(label, (counts.get(label) ?? 0) + 1);
+      }
     }
   }
+  if (counts.size === 0) return "";
+  return [...counts.entries()].map(([n, c]) => `${c} ${n}`).join(", ");
+}
+
+function collapsedSummary(items: Layer2Item[]): string {
+  const tools = toolBreakdown(items);
+  const noiseItems = items.filter((i) => i.kind === "topical-group" && i.groupType === "noise");
+  const noisePart = noiseItems.map((i) => (i as TopicalGroup).summary).join(", ");
+
+  const parts: string[] = [];
+  if (tools) parts.push(tools);
+  if (noisePart) parts.push(noisePart);
   const standaloneCount = items.filter((i) => i.kind === "entry").length;
-  if (standaloneCount > 0) {
-    parts.push(`${standaloneCount} other`);
-  }
+  if (standaloneCount > 0) parts.push(`${standaloneCount} other`);
   return parts.join(", ") || `${items.length} entries`;
 }
 
