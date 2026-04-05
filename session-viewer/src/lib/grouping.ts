@@ -126,7 +126,14 @@ function toolCallSummary(entries: SessionEntry[]): string {
   return [...counts.entries()].map(([n, c]) => `${c} ${n}`).join(", ");
 }
 
-/** Extract a summary from the last TodoWrite call's todo list. */
+const TODO_ICONS: Record<string, string> = {
+  pending: "·",
+  in_progress: "▶",
+  completed: "✓",
+  cancelled: "✗",
+};
+
+/** Build a rich summary from the last TodoWrite call: [done/total] + per-status icon counts. */
 function getLastTodoState(entries: SessionEntry[]): string | null {
   for (let i = entries.length - 1; i >= 0; i--) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -136,13 +143,18 @@ function getLastTodoState(entries: SessionEntry[]): string | null {
       if (b.type === "tool_use" && b.name === "TodoWrite") {
         const todos = (b.input as Record<string, unknown>)?.todos;
         if (!Array.isArray(todos) || todos.length === 0) continue;
+        const typed = todos as Array<{ status?: string }>;
+        const total = typed.length;
+        const done = typed.filter((t) => t.status === "completed").length;
         const statusCounts: Record<string, number> = {};
-        for (const t of todos as Array<{ status?: string }>) {
-          const key = (t.status ?? "pending").replace(/_/g, " ");
+        for (const t of typed) {
+          const key = t.status ?? "pending";
           statusCounts[key] = (statusCounts[key] ?? 0) + 1;
         }
-        const parts = Object.entries(statusCounts).map(([k, v]) => `${v} ${k}`);
-        return `Todos: ${parts.join(", ")}`;
+        const parts = Object.entries(statusCounts)
+          .map(([k, v]) => `${TODO_ICONS[k] ?? k} ${v}`)
+          .join("  ");
+        return `Todos [${done}/${total}]  ${parts}`;
       }
     }
   }

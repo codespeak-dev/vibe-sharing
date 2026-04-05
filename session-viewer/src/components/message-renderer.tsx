@@ -206,54 +206,69 @@ export interface TodoItem {
   activeForm?: string;
 }
 
+export interface TodoChangePart {
+  icon: string;
+  color: string;
+  text: string;
+}
+
 export interface TodoWriteDiff {
   summary: string;
+  /** Structured change parts for rich header rendering (icon + text, max 2) */
+  changeParts: TodoChangePart[];
+  /** Progress string like "[2/5]" — completed/total */
+  progress: string;
   items: Array<TodoItem & { change?: "added" | "removed" | "status-changed"; prevStatus?: string }>;
 }
 
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
+function todoProgress(todos: TodoItem[]): string {
+  const done = todos.filter((t) => t.status === "completed").length;
+  return `[${done}/${todos.length}]`;
 }
 
-function todoStatusSummary(todos: TodoItem[]): string {
-  const counts: Record<string, number> = {};
-  for (const t of todos) {
-    const key = t.status.replace(/_/g, " ");
-    counts[key] = (counts[key] ?? 0) + 1;
-  }
-  return Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(", ");
+function changeIcon(status: string): { icon: string; color: string } {
+  return TODO_STATUS_ICONS[status] ?? TODO_STATUS_ICONS.pending!;
+}
+
+function changesToParts(changes: Array<{ content: string; status: string }>, maxLen: number): TodoChangePart[] {
+  return changes.slice(0, 2).map((c) => {
+    const si = changeIcon(c.status);
+    return { icon: si.icon, color: si.color, text: truncate(c.content, maxLen) };
+  });
 }
 
 export function computeTodoWriteDiff(currentTodos: TodoItem[], prevTodos: TodoItem[] | null): TodoWriteDiff {
+  const progress = todoProgress(currentTodos);
+
   if (!prevTodos) {
     const items = currentTodos.map((t) => ({ ...t, change: "added" as const }));
-    if (currentTodos.length === 1) {
-      return { summary: `Added: ${truncate(currentTodos[0]!.content, 60)}`, items };
-    }
-    const allPending = currentTodos.every((t) => t.status === "pending");
-    const summary = allPending
-      ? `${currentTodos.length} tasks added`
-      : `${currentTodos.length} tasks: ${todoStatusSummary(currentTodos)}`;
-    return { summary, items };
+    const nonPending = currentTodos.filter((t) => t.status !== "pending");
+    const changeParts = nonPending.length <= 2
+      ? changesToParts(nonPending, 40)
+      : [];
+    const summary = currentTodos.length === 1
+      ? `Added: ${truncate(currentTodos[0]!.content, 60)}`
+      : `${currentTodos.length} tasks added`;
+    return { summary, changeParts, progress, items };
   }
 
   const prevByContent = new Map(prevTodos.map((t) => [t.content, t]));
   const currByContent = new Map(currentTodos.map((t) => [t.content, t]));
 
-  const changes: Array<{ type: "added" | "removed" | "status-changed"; content: string; status: string; prevStatus?: string }> = [];
+  const changes: Array<{ type: "added" | "removed" | "status-changed"; content: string; status: string }> = [];
 
   for (const t of currentTodos) {
     const prev = prevByContent.get(t.content);
     if (!prev) {
       changes.push({ type: "added", content: t.content, status: t.status });
     } else if (prev.status !== t.status) {
-      changes.push({ type: "status-changed", content: t.content, status: t.status, prevStatus: prev.status });
+      changes.push({ type: "status-changed", content: t.content, status: t.status });
     }
   }
 
   for (const t of prevTodos) {
     if (!currByContent.has(t.content)) {
-      changes.push({ type: "removed", content: t.content, status: t.status });
+      changes.push({ type: "removed", content: t.content, status: "cancelled" });
     }
   }
 
@@ -264,15 +279,18 @@ export function computeTodoWriteDiff(currentTodos: TodoItem[], prevTodos: TodoIt
     return { ...t };
   });
 
+  const changeParts = changes.length <= 2
+    ? changesToParts(changes, 40)
+    : [];
+
   let summary: string;
   if (changes.length === 0) {
     summary = "No changes";
-  } else if (changes.length === 1) {
-    const c = changes[0]!;
-    const statusLabel = c.type === "added" ? "Added"
-      : c.type === "removed" ? "Removed"
-      : capitalize(c.status.replace(/_/g, " "));
-    summary = `${statusLabel}: ${truncate(c.content, 50)}`;
+  } else if (changes.length <= 2) {
+    summary = changes.map((c) => {
+      const si = changeIcon(c.status);
+      return `${si.icon} ${truncate(c.content, 40)}`;
+    }).join("  ");
   } else {
     const counts: Record<string, number> = {};
     for (const c of changes) {
@@ -282,7 +300,7 @@ export function computeTodoWriteDiff(currentTodos: TodoItem[], prevTodos: TodoIt
     summary = Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(", ");
   }
 
-  return { summary, items };
+  return { summary, changeParts, progress, items };
 }
 
 /** Extract a meaningful detail string (file path, pattern, command) from tool input. */
@@ -554,7 +572,19 @@ function TodoWriteBlock({ block, todoWriteDiffs }: { block: ContentBlock; todoWr
       >
         <span className="text-neutral-500">{expanded ? "v" : ">"}</span>
         <span className="font-semibold text-amber-400">TodoWrite</span>
-        {diff?.summary && <span className="text-neutral-500 truncate">{diff.summary}</span>}
+        {diff && (
+          <span className="flex items-center gap-1.5 truncate">
+            <span className="text-neutral-500 font-mono shrink-0">{diff.progress}</span>
+            {diff.changeParts.length > 0 ? diff.changeParts.map((p, i) => (
+              <span key={i} className="flex items-center gap-0.5 truncate">
+                <span className={p.color}>{p.icon}</span>
+                <span className="text-neutral-400 truncate">{p.text}</span>
+              </span>
+            )) : (
+              <span className="text-neutral-500 truncate">{diff.summary}</span>
+            )}
+          </span>
+        )}
       </button>
       {expanded && (
         <div className="px-3 pb-2 space-y-0.5">

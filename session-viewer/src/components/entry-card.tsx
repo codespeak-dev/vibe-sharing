@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { JsonViewer } from "./json-viewer";
-import { MessageRenderer, hasRenderedView, getHeaderExtra, isHeaderOnly, getCollapsedPreview, getDisplayType, entryReferencesPlans, entryHasThinking, getThinkingPreview, getEntryIdeTags, type ToolUseInfo, type TodoWriteDiff } from "./message-renderer";
+import { MessageRenderer, hasRenderedView, getHeaderExtra, isHeaderOnly, getCollapsedPreview, getDisplayType, entryReferencesPlans, entryHasThinking, getThinkingPreview, getEntryIdeTags, type ToolUseInfo, type TodoWriteDiff, type TodoChangePart } from "./message-renderer";
 import { truncate, foldCwd, shortenPath } from "@/lib/format";
 import { formatDateTime } from "@/lib/format";
 import { classifyTag, type ClassifyEntry } from "@/lib/classify";
@@ -72,6 +72,7 @@ export function EntryCard({ entry, forceExpanded, projectPath, toolMap, toolResu
   const rawMsg = (entry.raw as any)?.message;
   const contentBlocks: Array<Record<string, unknown>> = Array.isArray(rawMsg?.content) ? rawMsg.content : [];
   const toolInfos: Array<{ name: string; detail: string | null }> = [];
+  let todoHeaderDiff: { changeParts: TodoChangePart[]; progress: string; summary: string } | null = null;
   for (const b of contentBlocks) {
     if (b.type === "tool_use" && typeof b.name === "string") {
       const inp = b.input as Record<string, unknown> | undefined;
@@ -84,7 +85,9 @@ export function EntryCard({ entry, forceExpanded, projectPath, toolMap, toolResu
       if (b.name === "Agent") {
         detail = (inp?.description as string) ?? (inp?.prompt as string)?.slice(0, 80) ?? null;
       } else if (b.name === "TodoWrite" && todoWriteDiffs && typeof b.id === "string") {
-        detail = todoWriteDiffs.get(b.id)?.summary ?? null;
+        const diff = todoWriteDiffs.get(b.id);
+        if (diff) todoHeaderDiff = { changeParts: diff.changeParts, progress: diff.progress, summary: diff.summary };
+        detail = null; // rendered separately
       } else {
         detail = toolDetail({ name: b.name, input: inp }, cwd);
       }
@@ -159,9 +162,22 @@ export function EntryCard({ entry, forceExpanded, projectPath, toolMap, toolResu
             {t.name}
           </span>
         ))}
-        {toolInfos.length > 0 && (
+        {toolInfos.length > 0 && !todoHeaderDiff && (
           <span className="text-[10px] text-neutral-500 truncate font-mono">
             {toolInfos.map((t) => t.detail).filter(Boolean).join(", ")}
+          </span>
+        )}
+        {todoHeaderDiff && (
+          <span className="text-[10px] flex items-center gap-1.5 truncate">
+            <span className="text-neutral-500 font-mono shrink-0">{todoHeaderDiff.progress}</span>
+            {todoHeaderDiff.changeParts.length > 0 ? todoHeaderDiff.changeParts.map((p, i) => (
+              <span key={i} className="flex items-center gap-0.5 truncate">
+                <span className={p.color}>{p.icon}</span>
+                <span className="text-neutral-400 truncate">{p.text}</span>
+              </span>
+            )) : (
+              <span className="text-neutral-500 truncate">{todoHeaderDiff.summary}</span>
+            )}
           </span>
         )}
         {/* Subagent cross-links */}
