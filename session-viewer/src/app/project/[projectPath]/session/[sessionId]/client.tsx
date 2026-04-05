@@ -12,7 +12,9 @@ import {
   type CollapsedGroup,
   type TopicalGroup,
   type Layer2Item,
+  type DisplayOverrides,
 } from "@/lib/grouping";
+import { type FilterState, initFilter, saveFilter } from "@/lib/filter-state";
 
 // ── Rendering components ───────────────────────────────────────────
 
@@ -91,11 +93,12 @@ function CollapsedGroupView({
     return (
       <button
         onClick={() => setExpanded(true)}
-        className="w-full flex items-center text-[11px] text-neutral-600 hover:text-neutral-400 py-1.5 cursor-pointer transition-colors border border-neutral-800/50 rounded-lg hover:border-neutral-700"
+        className="w-full flex items-center gap-2 text-[11px] text-neutral-600 hover:text-neutral-400 py-1.5 px-3 cursor-pointer transition-colors border border-neutral-800/50 rounded-lg hover:border-neutral-700"
       >
-        <span className="flex-1 text-center">··· {group.summary} ···</span>
+        <span className="text-[10px] text-neutral-600 font-mono shrink-0">▸ {group.entryCount}</span>
+        <span className="flex-1">{group.summary}</span>
         {group.duration && (
-          <span className="text-[10px] text-neutral-600 shrink-0 pr-3">{group.duration}</span>
+          <span className="text-[10px] text-neutral-600 shrink-0">{group.duration}</span>
         )}
       </button>
     );
@@ -105,11 +108,12 @@ function CollapsedGroupView({
     <div className="space-y-2 bg-blue-950/20 border border-blue-900/30 rounded-lg p-2">
       <button
         onClick={() => setExpanded(false)}
-        className="w-full flex items-center text-[11px] text-neutral-500 hover:text-neutral-300 py-1 cursor-pointer transition-colors"
+        className="w-full flex items-center gap-2 text-[11px] text-neutral-500 hover:text-neutral-300 py-1 px-1 cursor-pointer transition-colors"
       >
-        <span className="flex-1 text-center">▲ collapse {group.summary}</span>
+        <span className="text-[10px] text-neutral-500 font-mono shrink-0">▾ {group.entryCount}</span>
+        <span className="flex-1">{group.summary}</span>
         {group.duration && (
-          <span className="text-[10px] text-neutral-600 shrink-0 pr-1">{group.duration}</span>
+          <span className="text-[10px] text-neutral-600 shrink-0">{group.duration}</span>
         )}
       </button>
       {group.items.map((item, i) => (
@@ -274,6 +278,29 @@ export function SessionClient({
   const loadingMoreRef = useRef(false);
   const [expandAll, setExpandAll] = useState(false);
   const [reapplyKey, setReapplyKey] = useState(0);
+  const [filterState, setFilterState] = useState<FilterState>(() => initFilter());
+
+  const handleFilterChange = useCallback((next: FilterState) => {
+    setFilterState(next);
+    saveFilter(next);
+    setReapplyKey((k) => k + 1);
+  }, []);
+
+  // Convert FilterState to DisplayOverrides for the grouping pipeline
+  const displayOverrides = useMemo((): DisplayOverrides | undefined => {
+    const entries = Object.entries(filterState);
+    if (entries.length === 0) return undefined;
+    const primary: Record<string, boolean> = {};
+    const expanded: Record<string, boolean> = {};
+    for (const [tag, ovr] of entries) {
+      if (ovr.primary !== undefined) primary[tag] = ovr.primary;
+      if (ovr.expanded !== undefined) expanded[tag] = ovr.expanded;
+    }
+    return {
+      primary: Object.keys(primary).length > 0 ? primary : undefined,
+      expanded: Object.keys(expanded).length > 0 ? expanded : undefined,
+    };
+  }, [filterState]);
 
   const [highlightEntry, setHighlightEntry] = useState<number | null>(() => {
     if (typeof window === "undefined") return null;
@@ -350,7 +377,7 @@ export function SessionClient({
     });
   }, [hasMore, entries.length, fetchPage, loading]);
 
-  const displayItems = useMemo(() => buildDisplayItems(entries), [entries]);
+  const displayItems = useMemo(() => buildDisplayItems(entries, displayOverrides), [entries, displayOverrides]);
 
   const toolMap = useMemo(() => {
     const map = new Map<string, ToolUseInfo>();
@@ -439,12 +466,12 @@ export function SessionClient({
         <p className="text-sm text-neutral-500">
           Showing {entries.length} of {total} entries
         </p>
-        <FilterBar onExpandAll={handleExpandAll} onReapply={handleReapply} />
+        <FilterBar filterState={filterState} onChange={handleFilterChange} onExpandAll={handleExpandAll} onReapply={handleReapply} />
       </div>
       <div className="space-y-3">
         {displayItems.map((item, i) => (
           <DisplayItemView
-            key={item.kind === "entry" ? `e-${item.entry.lineIndex}` : `cg-${item.items[0]?.kind === "entry" ? item.items[0].entry.lineIndex : (item.items[0] as TopicalGroup)?.entries[0]?.lineIndex ?? i}`}
+            key={`${reapplyKey}-${item.kind === "entry" ? `e-${item.entry.lineIndex}` : `cg-${item.items[0]?.kind === "entry" ? item.items[0].entry.lineIndex : (item.items[0] as TopicalGroup)?.entries[0]?.lineIndex ?? i}`}`}
             item={item}
             projectPath={projectPath}
             toolMap={toolMap}

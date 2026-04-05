@@ -56,6 +56,7 @@ export type Layer2Item = TopicalGroup | ClassifiedEntry;
 export interface CollapsedGroup {
   kind: "collapsed-group";
   items: Layer2Item[];
+  entryCount: number;
   summary: string;
   duration: string | null;
 }
@@ -144,14 +145,20 @@ function classifyTag(entry: SessionEntry): EntryTag {
 }
 
 /** Which tags are primary interest by default? */
-const PRIMARY_TAGS = new Set<EntryTag>([
+export const DEFAULT_PRIMARY_TAGS = new Set<EntryTag>([
   "user-prompt", "assistant-text", "plan", "agent-question", "exit-plan-mode",
 ]);
 
 /** Which tags default to expanded cards? */
-const EXPANDED_TAGS = new Set<EntryTag>([
+export const DEFAULT_EXPANDED_TAGS = new Set<EntryTag>([
   "user-prompt", "assistant-text", "plan", "agent-question", "exit-plan-mode",
 ]);
+
+/** Overrides that can be passed from the filter UI. */
+export interface DisplayOverrides {
+  primary?: Partial<Record<EntryTag, boolean>>;
+  expanded?: Partial<Record<EntryTag, boolean>>;
+}
 
 /** Which tags participate in topical grouping, and what group type? */
 const TOPICAL_MAP: Partial<Record<EntryTag, TopicalGroupType>> = {
@@ -162,13 +169,15 @@ const TOPICAL_MAP: Partial<Record<EntryTag, TopicalGroupType>> = {
   "noise": "noise",
 };
 
-function classify(entry: SessionEntry): ClassifiedEntry {
+function classify(entry: SessionEntry, overrides?: DisplayOverrides): ClassifiedEntry {
   const tag = classifyTag(entry);
+  const isPrimary = overrides?.primary?.[tag] ?? DEFAULT_PRIMARY_TAGS.has(tag);
+  const defaultExpanded = overrides?.expanded?.[tag] ?? DEFAULT_EXPANDED_TAGS.has(tag);
   return {
     kind: "entry",
     entry,
-    isPrimary: PRIMARY_TAGS.has(tag),
-    defaultExpanded: EXPANDED_TAGS.has(tag),
+    isPrimary,
+    defaultExpanded,
   };
 }
 
@@ -205,7 +214,7 @@ function groupSummary(type: TopicalGroupType, entries: SessionEntry[]): string {
   return type === "tool-call" ? toolCallSummary(entries) : noiseSummary(entries);
 }
 
-function buildLayer2(entries: SessionEntry[]): Layer2Item[] {
+function buildLayer2(entries: SessionEntry[], overrides?: DisplayOverrides): Layer2Item[] {
   const items: Layer2Item[] = [];
   let buf: SessionEntry[] = [];
   let bufType: TopicalGroupType | null = null;
@@ -214,7 +223,7 @@ function buildLayer2(entries: SessionEntry[]): Layer2Item[] {
     if (buf.length > 0 && bufType !== null) {
       if (buf.length === 1) {
         // Single-entry group → just emit as a classified entry, no wrapper
-        items.push(classify(buf[0]!));
+        items.push(classify(buf[0]!, overrides));
       } else {
         items.push({ kind: "topical-group", groupType: bufType, entries: buf, summary: groupSummary(bufType, buf) });
       }
@@ -225,7 +234,7 @@ function buildLayer2(entries: SessionEntry[]): Layer2Item[] {
 
   for (const entry of entries) {
     const tt = topicalType(entry);
-    const cls = classify(entry);
+    const cls = classify(entry, overrides);
 
     // Primary entries always standalone — flush any group first
     if (cls.isPrimary) {
@@ -338,11 +347,20 @@ function buildLayer3(layer2: Layer2Item[]): DisplayItem[] {
   const result: DisplayItem[] = [];
   let nonPrimaryBuf: Layer2Item[] = [];
 
+  const countEntries = (items: Layer2Item[]): number => {
+    let n = 0;
+    for (const item of items) {
+      n += item.kind === "entry" ? 1 : item.entries.length;
+    }
+    return n;
+  };
+
   const flushBuf = () => {
     if (nonPrimaryBuf.length > 0) {
       result.push({
         kind: "collapsed-group",
         items: nonPrimaryBuf,
+        entryCount: countEntries(nonPrimaryBuf),
         summary: collapsedSummary(nonPrimaryBuf),
         duration: groupDuration(nonPrimaryBuf),
       });
@@ -365,7 +383,7 @@ function buildLayer3(layer2: Layer2Item[]): DisplayItem[] {
 
 // ── Public API ─────────────────────────────────────────────────────
 
-export function buildDisplayItems(entries: SessionEntry[]): DisplayItem[] {
-  const layer2 = buildLayer2(entries);
+export function buildDisplayItems(entries: SessionEntry[], overrides?: DisplayOverrides): DisplayItem[] {
+  const layer2 = buildLayer2(entries, overrides);
   return buildLayer3(layer2);
 }
