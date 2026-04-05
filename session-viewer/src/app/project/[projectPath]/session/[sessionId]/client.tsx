@@ -18,6 +18,17 @@ import { type FilterState, initFilter, saveFilter } from "@/lib/filter-state";
 
 // ── Rendering components ───────────────────────────────────────────
 
+/** Check if a Layer2Item contains a given entry lineIndex. */
+function layer2Contains(item: Layer2Item, lineIndex: number): boolean {
+  if (item.kind === "entry") return item.entry.lineIndex === lineIndex;
+  return item.entries.some((e) => e.lineIndex === lineIndex);
+}
+
+/** Check if a CollapsedGroup contains a given entry lineIndex. */
+function collapsedGroupContains(group: CollapsedGroup, lineIndex: number): boolean {
+  return group.items.some((item) => layer2Contains(item, lineIndex));
+}
+
 function DisplayItemView({
   item,
   projectPath,
@@ -28,6 +39,7 @@ function DisplayItemView({
   expandAll,
   defaultModel,
   subagentLinks,
+  highlightEntry,
 }: {
   item: DisplayItem;
   projectPath: string;
@@ -38,16 +50,17 @@ function DisplayItemView({
   expandAll: boolean;
   defaultModel?: string;
   subagentLinks?: SubagentLinks;
+  highlightEntry?: number | null;
 }) {
   if (item.kind === "entry") {
     return (
       <EntryCard
         entry={item.entry}
-        forceExpanded={expandAll || item.defaultExpanded}
+        forceExpanded={expandAll || item.defaultExpanded || item.entry.lineIndex === highlightEntry}
         projectPath={projectPath}
         toolMap={toolMap}
         toolResultMap={toolResultMap}
-            toolTimestamps={toolTimestamps}
+        toolTimestamps={toolTimestamps}
         defaultModel={defaultModel}
         subagentLinks={subagentLinks}
       />
@@ -59,11 +72,12 @@ function DisplayItemView({
       projectPath={projectPath}
       toolMap={toolMap}
       toolResultMap={toolResultMap}
-            toolTimestamps={toolTimestamps}
+      toolTimestamps={toolTimestamps}
       reapplyKey={reapplyKey}
       expandAll={expandAll}
       defaultModel={defaultModel}
       subagentLinks={subagentLinks}
+      highlightEntry={highlightEntry}
     />
   );
 }
@@ -78,6 +92,7 @@ function CollapsedGroupView({
   expandAll,
   defaultModel,
   subagentLinks,
+  highlightEntry,
 }: {
   group: CollapsedGroup;
   projectPath: string;
@@ -88,18 +103,20 @@ function CollapsedGroupView({
   expandAll: boolean;
   defaultModel?: string;
   subagentLinks?: SubagentLinks;
+  highlightEntry?: number | null;
 }) {
-  const [expanded, setExpanded] = useState(expandAll);
+  const containsHighlight = highlightEntry != null && collapsedGroupContains(group, highlightEntry);
+  const [expanded, setExpanded] = useState(expandAll || containsHighlight);
   const reapplyRef = useRef(reapplyKey);
 
-  // React to expandAll / reapply
-  useEffect(() => { if (expandAll) setExpanded(true); }, [expandAll]);
+  // React to expandAll / reapply / highlight
+  useEffect(() => { if (expandAll || containsHighlight) setExpanded(true); }, [expandAll, containsHighlight]);
   useEffect(() => {
     if (reapplyRef.current !== reapplyKey) {
       reapplyRef.current = reapplyKey;
-      setExpanded(false);
+      setExpanded(containsHighlight);
     }
-  }, [reapplyKey]);
+  }, [reapplyKey, containsHighlight]);
 
   if (!expanded) {
     return (
@@ -135,12 +152,13 @@ function CollapsedGroupView({
           projectPath={projectPath}
           toolMap={toolMap}
           toolResultMap={toolResultMap}
-            toolTimestamps={toolTimestamps}
+          toolTimestamps={toolTimestamps}
           reapplyKey={reapplyKey}
           expandAll={expandAll}
           autoExpand={group.items.length === 1 && item.kind === "topical-group"}
           defaultModel={defaultModel}
           subagentLinks={subagentLinks}
+          highlightEntry={highlightEntry}
         />
       ))}
     </div>
@@ -158,6 +176,7 @@ function Layer2ItemView({
   autoExpand,
   defaultModel,
   subagentLinks,
+  highlightEntry,
 }: {
   item: Layer2Item;
   projectPath: string;
@@ -169,16 +188,17 @@ function Layer2ItemView({
   autoExpand?: boolean;
   defaultModel?: string;
   subagentLinks?: SubagentLinks;
+  highlightEntry?: number | null;
 }) {
   if (item.kind === "entry") {
     return (
       <EntryCard
         entry={item.entry}
-        forceExpanded={expandAll || item.defaultExpanded}
+        forceExpanded={expandAll || item.defaultExpanded || item.entry.lineIndex === highlightEntry}
         projectPath={projectPath}
         toolMap={toolMap}
         toolResultMap={toolResultMap}
-            toolTimestamps={toolTimestamps}
+        toolTimestamps={toolTimestamps}
         defaultModel={defaultModel}
         subagentLinks={subagentLinks}
       />
@@ -190,12 +210,13 @@ function Layer2ItemView({
       projectPath={projectPath}
       toolMap={toolMap}
       toolResultMap={toolResultMap}
-            toolTimestamps={toolTimestamps}
+      toolTimestamps={toolTimestamps}
       reapplyKey={reapplyKey}
       expandAll={expandAll}
       autoExpand={autoExpand}
       defaultModel={defaultModel}
       subagentLinks={subagentLinks}
+      highlightEntry={highlightEntry}
     />
   );
 }
@@ -211,6 +232,7 @@ function TopicalGroupView({
   autoExpand,
   defaultModel,
   subagentLinks,
+  highlightEntry,
 }: {
   group: TopicalGroup;
   projectPath: string;
@@ -222,18 +244,20 @@ function TopicalGroupView({
   autoExpand?: boolean;
   defaultModel?: string;
   subagentLinks?: SubagentLinks;
+  highlightEntry?: number | null;
 }) {
-  const [expanded, setExpanded] = useState(expandAll || !!autoExpand);
+  const containsHighlight = highlightEntry != null && group.entries.some((e) => e.lineIndex === highlightEntry);
+  const [expanded, setExpanded] = useState(expandAll || !!autoExpand || containsHighlight);
   const reapplyRef = useRef(reapplyKey);
 
-  useEffect(() => { if (expandAll) setExpanded(true); }, [expandAll]);
+  useEffect(() => { if (expandAll || containsHighlight) setExpanded(true); }, [expandAll, containsHighlight]);
   useEffect(() => {
     // Only react to reapply changes, not the initial mount
     if (reapplyRef.current !== reapplyKey) {
       reapplyRef.current = reapplyKey;
-      setExpanded(!!autoExpand);
+      setExpanded(!!autoExpand || containsHighlight);
     }
-  }, [reapplyKey, autoExpand]);
+  }, [reapplyKey, autoExpand, containsHighlight]);
 
   if (!expanded) {
     return (
@@ -259,6 +283,7 @@ function TopicalGroupView({
           <EntryCard
             key={entry.lineIndex}
             entry={entry}
+            forceExpanded={entry.lineIndex === highlightEntry}
             projectPath={projectPath}
             toolMap={toolMap}
             toolResultMap={toolResultMap}
@@ -572,6 +597,7 @@ export function SessionClient({
             expandAll={expandAll}
             defaultModel={defaultModel}
             subagentLinks={subagentLinks}
+            highlightEntry={highlightEntry}
           />
         ))}
       </div>
