@@ -4,6 +4,7 @@ import { useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { stripIdeTags, parseIdeTags, foldCwd, shortenPath, type IdeTag, truncate } from "@/lib/format";
+import { OldNewDiffView } from "./diff-view";
 
 interface ContentBlock {
   type: string;
@@ -282,6 +283,7 @@ function ContentBlockRenderer({ block, cwd, toolMap, toolResultMap, toolTimestam
       if (block.name === "AskUserQuestion") return <AskUserQuestionBlock block={block} toolResultMap={toolResultMap} />;
       if (block.name === "ExitPlanMode") return <ExitPlanModeBlock block={block} toolResultMap={toolResultMap} />;
       if (block.name === "Agent") return <SubagentToolUseBlock block={block} toolResultMap={toolResultMap} toolTimestamps={toolTimestamps} />;
+      if (block.name === "Edit") return <EditToolUseBlock block={block} cwd={cwd} />;
       return <ToolUseBlock block={block} cwd={cwd} />;
     case "tool_result": {
       // Check if this is a subagent result
@@ -413,6 +415,31 @@ function ToolUseBlock({ block, cwd }: { block: ContentBlock; cwd: string }) {
         <pre className="px-3 pb-3 text-xs text-neutral-400 font-mono whitespace-pre-wrap break-words max-h-96 overflow-y-auto">
           {inputStr}
         </pre>
+      )}
+    </div>
+  );
+}
+
+function EditToolUseBlock({ block, cwd }: { block: ContentBlock; cwd: string }) {
+  const [expanded, setExpanded] = useState(true);
+  const oldStr = (block.input?.old_string as string) ?? "";
+  const newStr = (block.input?.new_string as string) ?? "";
+  const detail = toolDetailStr("Edit", block.input, cwd);
+
+  return (
+    <div className="border border-amber-900/50 rounded bg-amber-950/20">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 cursor-pointer hover:bg-amber-950/30"
+      >
+        <span className="text-neutral-500">{expanded ? "v" : ">"}</span>
+        <span className="font-semibold text-amber-400">Edit</span>
+        {detail && <span className="text-neutral-500 truncate font-mono">{detail}</span>}
+      </button>
+      {expanded && (oldStr || newStr) && (
+        <div className="px-3 pb-3">
+          <OldNewDiffView oldStr={oldStr} newStr={newStr} />
+        </div>
       )}
     </div>
   );
@@ -556,19 +583,8 @@ function PlanToolUseBlock({ block }: { block: ContentBlock }) {
           <span className="text-purple-400/60">edit</span>
         </button>
         {expanded && (
-          <div className="px-3 pb-3 space-y-2">
-            {oldStr && (
-              <div className="text-xs">
-                <div className="text-red-400/70 font-mono mb-0.5">- old</div>
-                <pre className="text-red-300/50 font-mono whitespace-pre-wrap break-words bg-red-950/20 rounded p-2 max-h-48 overflow-y-auto">{oldStr}</pre>
-              </div>
-            )}
-            {newStr && (
-              <div className="text-xs">
-                <div className="text-green-400/70 font-mono mb-0.5">+ new</div>
-                <pre className="text-green-300/50 font-mono whitespace-pre-wrap break-words bg-green-950/20 rounded p-2 max-h-48 overflow-y-auto">{newStr}</pre>
-              </div>
-            )}
+          <div className="px-3 pb-3">
+            <OldNewDiffView oldStr={oldStr} newStr={newStr} />
           </div>
         )}
       </div>
