@@ -323,12 +323,24 @@ export function SessionClient({
 }) {
   const [entries, setEntries] = useState<SessionEntry[]>([]);
   const [total, setTotal] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrolledRef = useRef(false);
-  const loadingMoreRef = useRef(false);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    const url = `/api/session-entries?sessionId=${encodeURIComponent(sessionId)}&projectPath=${encodeURIComponent(encodedProjectPath)}&offset=0&limit=10000`;
+    fetch(url)
+      .then((res) => res.json())
+      .then((data) => {
+        setEntries(data.entries ?? []);
+        setTotal(data.total ?? 0);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setLoading(false));
+  }, [sessionId, encodedProjectPath]);
+
   const [expandAll, setExpandAll] = useState(false);
   const [reapplyKey, setReapplyKey] = useState(0);
   const [filterState, setFilterState] = useState<FilterState>(() => initFilter());
@@ -361,74 +373,33 @@ export function SessionClient({
     return match ? parseInt(match[1]!, 10) : null;
   });
 
+  // Re-read hash on client-side navigation (sessionId change) and hash changes
   useEffect(() => {
-    const onHashChange = () => {
+    const readHash = () => {
       const match = window.location.hash.match(/^#entry-(\d+)$/);
       setHighlightEntry(match ? parseInt(match[1]!, 10) : null);
       scrolledRef.current = false;
     };
-    window.addEventListener("hashchange", onHashChange);
-    return () => window.removeEventListener("hashchange", onHashChange);
-  }, []);
+    // Sync on mount / sessionId change
+    readHash();
+    window.addEventListener("hashchange", readHash);
+    return () => window.removeEventListener("hashchange", readHash);
+  }, [sessionId]);
 
-  const fetchPage = useCallback(
-    async (offset: number, append: boolean) => {
-      const url = `/api/session-entries?sessionId=${encodeURIComponent(sessionId)}&projectPath=${encodeURIComponent(encodedProjectPath)}&offset=${offset}&limit=${PAGE_SIZE}`;
-      try {
-        const res = await fetch(url);
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({ error: res.statusText }));
-          throw new Error(body.error ?? `HTTP ${res.status}`);
-        }
-        const data: ApiResponse = await res.json();
-        setEntries((prev) => (append ? [...prev, ...data.entries] : data.entries));
-        setTotal(data.total);
-        setHasMore(data.hasMore);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    },
-    [sessionId, encodedProjectPath],
-  );
-
+  // Scroll to highlighted entry on mount / hash change
   useEffect(() => {
-    setLoading(true);
-    setError(null);
-    fetchPage(0, false).finally(() => setLoading(false));
-  }, [fetchPage]);
-
-  useEffect(() => {
-    if (highlightEntry == null || loading || scrolledRef.current) return;
-    const entryLoaded = entries.some((e) => e.lineIndex === highlightEntry);
-    if (!entryLoaded && hasMore) {
-      setLoadingMore(true);
-      fetchPage(entries.length, true).finally(() => setLoadingMore(false));
-      return;
-    }
-    if (entryLoaded) {
-      scrolledRef.current = true;
+    if (highlightEntry == null || scrolledRef.current) return;
+    scrolledRef.current = true;
+    requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          const el = document.getElementById(`entry-${highlightEntry}`);
-          if (el) {
-            el.scrollIntoView({ behavior: "smooth", block: "center" });
-            el.classList.add("ring-1", "ring-purple-500/60");
-          }
-        });
+        const el = document.getElementById(`entry-${highlightEntry}`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          el.classList.add("ring-1", "ring-purple-500/60");
+        }
       });
-    }
-  }, [highlightEntry, entries, loading, hasMore, fetchPage]);
-
-  // Eagerly load all remaining pages — with collapsed groups the DOM is small
-  useEffect(() => {
-    if (!hasMore || loadingMoreRef.current || loading) return;
-    loadingMoreRef.current = true;
-    setLoadingMore(true);
-    fetchPage(entries.length, true).finally(() => {
-      setLoadingMore(false);
-      loadingMoreRef.current = false;
     });
-  }, [hasMore, entries.length, fetchPage, loading]);
+  }, [highlightEntry, entries]);
 
   const displayItems = useMemo(() => buildDisplayItems(entries, displayOverrides), [entries, displayOverrides]);
 
@@ -601,9 +572,6 @@ export function SessionClient({
           />
         ))}
       </div>
-      {loadingMore && (
-        <div className="text-neutral-500 text-sm text-center py-4">Loading more entries...</div>
-      )}
     </div>
   );
 }

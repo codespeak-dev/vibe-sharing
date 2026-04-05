@@ -1,9 +1,12 @@
 import Link from "next/link";
 import { REGISTRY } from "@/lib/message-type-registry";
 import type { EntryTag } from "@/lib/classify";
+import { openCache, getInstancesByTag } from "@/lib/cache-db";
 import { RegistryInstancesClient } from "./client";
 
 export const dynamic = "force-dynamic";
+
+const PAGE_SIZE = 50;
 
 export default async function RegistryTypePage({
   params,
@@ -21,6 +24,10 @@ export default async function RegistryTypePage({
     );
   }
 
+  // Load first page server-side — no client loading spinner needed
+  const db = openCache();
+  const { instances, total } = getInstancesByTag(db, spec.searchTag, 0, PAGE_SIZE);
+
   return (
     <div>
       <div className="mb-6">
@@ -35,7 +42,11 @@ export default async function RegistryTypePage({
         </div>
         <p className="text-sm text-neutral-500 mt-1">{spec.description}</p>
       </div>
-      <RegistryInstancesClient typeId={typeId as EntryTag} />
+      <RegistryInstancesClient
+        typeId={typeId as EntryTag}
+        initialInstances={instances}
+        initialTotal={total}
+      />
     </div>
   );
 }

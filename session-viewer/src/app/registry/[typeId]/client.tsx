@@ -1,20 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
 import { EntryCard } from "@/components/entry-card";
 import { formatDateTime } from "@/lib/format";
 import type { EntryTag } from "@/lib/classify";
-
-interface RegistryInstance {
-  filePath: string;
-  sessionId: string;
-  aiTitle: string | null;
-  lineIndex: number;
-  type: string;
-  timestamp: string | null;
-  cwd: string | null;
-  raw: Record<string, unknown>;
-}
+import type { RegistryInstance } from "@/lib/cache-db";
 
 interface ApiResponse {
   instances: RegistryInstance[];
@@ -22,7 +13,7 @@ interface ApiResponse {
   hasMore: boolean;
 }
 
-const PAGE_SIZE = 30;
+const PAGE_SIZE = 50;
 
 /** Encode a string as base64url (browser-compatible). */
 function base64url(s: string): string {
@@ -37,50 +28,48 @@ function sessionLink(instance: RegistryInstance): string | null {
   return `/project/${encoded}/session/${instance.sessionId}#entry-${instance.lineIndex}`;
 }
 
-export function RegistryInstancesClient({ typeId }: { typeId: EntryTag }) {
-  const [instances, setInstances] = useState<RegistryInstance[]>([]);
-  const [total, setTotal] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
+export function RegistryInstancesClient({
+  typeId,
+  initialInstances,
+  initialTotal,
+}: {
+  typeId: EntryTag;
+  initialInstances: RegistryInstance[];
+  initialTotal: number;
+}) {
+  const [instances, setInstances] = useState(initialInstances);
+  const [total, setTotal] = useState(initialTotal);
+  const [hasMore, setHasMore] = useState(initialInstances.length < initialTotal);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const loadingMoreRef = useRef(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
-  const fetchPage = useCallback(
-    async (offset: number, append: boolean) => {
-      const url = `/api/registry-instances?typeId=${encodeURIComponent(typeId)}&offset=${offset}&limit=${PAGE_SIZE}`;
-      try {
-        const res = await fetch(url);
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({ error: res.statusText }));
-          throw new Error(body.error ?? `HTTP ${res.status}`);
-        }
-        const data: ApiResponse = await res.json();
-        setInstances((prev) => (append ? [...prev, ...data.instances] : data.instances));
-        setTotal(data.total);
-        setHasMore(data.hasMore);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    },
-    [typeId],
-  );
-
+  // Reset when server data changes (navigating between types)
   useEffect(() => {
-    setLoading(true);
-    setError(null);
-    fetchPage(0, false).finally(() => setLoading(false));
-  }, [fetchPage]);
+    setInstances(initialInstances);
+    setTotal(initialTotal);
+    setHasMore(initialInstances.length < initialTotal);
+  }, [initialInstances, initialTotal]);
 
   const loadMore = useCallback(async () => {
     if (loadingMoreRef.current) return;
     loadingMoreRef.current = true;
     setLoadingMore(true);
-    await fetchPage(instances.length, true);
+    const url = `/api/registry-instances?typeId=${encodeURIComponent(typeId)}&offset=${instances.length}&limit=${PAGE_SIZE}`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: ApiResponse = await res.json();
+      setInstances((prev) => [...prev, ...data.instances]);
+      setTotal(data.total);
+      setHasMore(data.hasMore);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
     setLoadingMore(false);
     loadingMoreRef.current = false;
-  }, [instances.length, fetchPage]);
+  }, [instances.length, typeId]);
 
   // Infinite scroll
   useEffect(() => {
@@ -97,10 +86,6 @@ export function RegistryInstancesClient({ typeId }: { typeId: EntryTag }) {
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [hasMore, loadMore]);
-
-  if (loading) {
-    return <div className="text-neutral-500 py-10 text-center">Loading instances...</div>;
-  }
 
   if (error) {
     return <div className="text-red-400 py-10 text-center">Error: {error}</div>;
@@ -132,9 +117,9 @@ export function RegistryInstancesClient({ typeId }: { typeId: EntryTag }) {
             <div key={`${inst.filePath}-${inst.lineIndex}-${i}`}>
               <div className="flex items-center gap-2 mb-1.5 text-xs text-neutral-500">
                 {link ? (
-                  <a href={link} className="hover:text-neutral-300 transition-colors">
+                  <Link href={link} className="hover:text-neutral-300 transition-colors">
                     {inst.aiTitle || inst.sessionId.slice(0, 12) + "..."}
-                  </a>
+                  </Link>
                 ) : (
                   <span>{inst.aiTitle || inst.sessionId.slice(0, 12) + "..."}</span>
                 )}
@@ -143,9 +128,9 @@ export function RegistryInstancesClient({ typeId }: { typeId: EntryTag }) {
                   <span className="text-neutral-600">{formatDateTime(inst.timestamp)}</span>
                 )}
                 {link && (
-                  <a href={link} className="text-blue-500 hover:text-blue-300 transition-colors">
+                  <Link href={link} className="text-blue-500 hover:text-blue-300 transition-colors">
                     open in session &rarr;
-                  </a>
+                  </Link>
                 )}
               </div>
               <EntryCard entry={entry} projectPath={inst.cwd ?? undefined} />
