@@ -116,7 +116,37 @@ function toolCallSummary(entries: SessionEntry[]): string {
     }
   }
   if (counts.size === 0) return `${entries.length} entries`;
+
+  // For pure-TodoWrite groups, summarize the final todo state
+  if (counts.size === 1 && counts.has("TodoWrite")) {
+    const lastTodos = getLastTodoState(entries);
+    if (lastTodos) return lastTodos;
+  }
+
   return [...counts.entries()].map(([n, c]) => `${c} ${n}`).join(", ");
+}
+
+/** Extract a summary from the last TodoWrite call's todo list. */
+function getLastTodoState(entries: SessionEntry[]): string | null {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const blocks: unknown[] = (entries[i]!.raw as any)?.message?.content ?? [];
+    if (!Array.isArray(blocks)) continue;
+    for (const b of blocks as Array<Record<string, unknown>>) {
+      if (b.type === "tool_use" && b.name === "TodoWrite") {
+        const todos = (b.input as Record<string, unknown>)?.todos;
+        if (!Array.isArray(todos) || todos.length === 0) continue;
+        const statusCounts: Record<string, number> = {};
+        for (const t of todos as Array<{ status?: string }>) {
+          const key = (t.status ?? "pending").replace(/_/g, " ");
+          statusCounts[key] = (statusCounts[key] ?? 0) + 1;
+        }
+        const parts = Object.entries(statusCounts).map(([k, v]) => `${v} ${k}`);
+        return `Todos: ${parts.join(", ")}`;
+      }
+    }
+  }
+  return null;
 }
 
 function noiseSummary(entries: SessionEntry[]): string {

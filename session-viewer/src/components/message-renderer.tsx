@@ -198,6 +198,93 @@ export interface ToolUseInfo {
   input?: Record<string, unknown>;
 }
 
+// ── TodoWrite types ──────────────────────────────────────────────
+
+export interface TodoItem {
+  content: string;
+  status: string;
+  activeForm?: string;
+}
+
+export interface TodoWriteDiff {
+  summary: string;
+  items: Array<TodoItem & { change?: "added" | "removed" | "status-changed"; prevStatus?: string }>;
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function todoStatusSummary(todos: TodoItem[]): string {
+  const counts: Record<string, number> = {};
+  for (const t of todos) {
+    const key = t.status.replace(/_/g, " ");
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(", ");
+}
+
+export function computeTodoWriteDiff(currentTodos: TodoItem[], prevTodos: TodoItem[] | null): TodoWriteDiff {
+  if (!prevTodos) {
+    const items = currentTodos.map((t) => ({ ...t, change: "added" as const }));
+    if (currentTodos.length === 1) {
+      return { summary: `Added: ${truncate(currentTodos[0]!.content, 60)}`, items };
+    }
+    const allPending = currentTodos.every((t) => t.status === "pending");
+    const summary = allPending
+      ? `${currentTodos.length} tasks added`
+      : `${currentTodos.length} tasks: ${todoStatusSummary(currentTodos)}`;
+    return { summary, items };
+  }
+
+  const prevByContent = new Map(prevTodos.map((t) => [t.content, t]));
+  const currByContent = new Map(currentTodos.map((t) => [t.content, t]));
+
+  const changes: Array<{ type: "added" | "removed" | "status-changed"; content: string; status: string; prevStatus?: string }> = [];
+
+  for (const t of currentTodos) {
+    const prev = prevByContent.get(t.content);
+    if (!prev) {
+      changes.push({ type: "added", content: t.content, status: t.status });
+    } else if (prev.status !== t.status) {
+      changes.push({ type: "status-changed", content: t.content, status: t.status, prevStatus: prev.status });
+    }
+  }
+
+  for (const t of prevTodos) {
+    if (!currByContent.has(t.content)) {
+      changes.push({ type: "removed", content: t.content, status: t.status });
+    }
+  }
+
+  const items = currentTodos.map((t) => {
+    const prev = prevByContent.get(t.content);
+    if (!prev) return { ...t, change: "added" as const };
+    if (prev.status !== t.status) return { ...t, change: "status-changed" as const, prevStatus: prev.status };
+    return { ...t };
+  });
+
+  let summary: string;
+  if (changes.length === 0) {
+    summary = "No changes";
+  } else if (changes.length === 1) {
+    const c = changes[0]!;
+    const statusLabel = c.type === "added" ? "Added"
+      : c.type === "removed" ? "Removed"
+      : capitalize(c.status.replace(/_/g, " "));
+    summary = `${statusLabel}: ${truncate(c.content, 50)}`;
+  } else {
+    const counts: Record<string, number> = {};
+    for (const c of changes) {
+      const key = c.type === "status-changed" ? c.status.replace(/_/g, " ") : c.type;
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+    summary = Object.entries(counts).map(([k, v]) => `${v} ${k}`).join(", ");
+  }
+
+  return { summary, items };
+}
+
 /** Extract a meaningful detail string (file path, pattern, command) from tool input. */
 function toolDetailStr(name: string, input: Record<string, unknown> | undefined, cwd: string): string | null {
   if (!input) return null;
@@ -215,14 +302,14 @@ function toolDetailStr(name: string, input: Record<string, unknown> | undefined,
   return s;
 }
 
-export function MessageRenderer({ entry, cwd, toolMap, toolResultMap, toolTimestamps, defaultModel }: { entry: EntryRaw; cwd?: string; toolMap?: Map<string, ToolUseInfo>; toolResultMap?: Map<string, string>; toolTimestamps?: Map<string, { useTs: string | null; resultTs: string | null }>; defaultModel?: string }) {
+export function MessageRenderer({ entry, cwd, toolMap, toolResultMap, toolTimestamps, defaultModel, todoWriteDiffs }: { entry: EntryRaw; cwd?: string; toolMap?: Map<string, ToolUseInfo>; toolResultMap?: Map<string, string>; toolTimestamps?: Map<string, { useTs: string | null; resultTs: string | null }>; defaultModel?: string; todoWriteDiffs?: Map<string, TodoWriteDiff> }) {
   const type = entry.type ?? "unknown";
 
   switch (type) {
     case "user":
-      return <UserMessage entry={entry} cwd={cwd ?? ""} toolMap={toolMap} toolResultMap={toolResultMap} />;
+      return <UserMessage entry={entry} cwd={cwd ?? ""} toolMap={toolMap} toolResultMap={toolResultMap} todoWriteDiffs={todoWriteDiffs} />;
     case "assistant":
-      return <AssistantMessage entry={entry} cwd={cwd ?? ""} toolResultMap={toolResultMap} toolTimestamps={toolTimestamps} defaultModel={defaultModel} />;
+      return <AssistantMessage entry={entry} cwd={cwd ?? ""} toolResultMap={toolResultMap} toolTimestamps={toolTimestamps} defaultModel={defaultModel} todoWriteDiffs={todoWriteDiffs} />;
     case "system":
       return <SystemMessage entry={entry} />;
     case "progress":
@@ -240,7 +327,7 @@ export function MessageRenderer({ entry, cwd, toolMap, toolResultMap, toolTimest
   }
 }
 
-function UserMessage({ entry, cwd, toolMap, toolResultMap }: { entry: EntryRaw; cwd: string; toolMap?: Map<string, ToolUseInfo>; toolResultMap?: Map<string, string> }) {
+function UserMessage({ entry, cwd, toolMap, toolResultMap, todoWriteDiffs }: { entry: EntryRaw; cwd: string; toolMap?: Map<string, ToolUseInfo>; toolResultMap?: Map<string, string>; todoWriteDiffs?: Map<string, TodoWriteDiff> }) {
   const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
   return (
     <div className="space-y-2">
@@ -248,7 +335,7 @@ function UserMessage({ entry, cwd, toolMap, toolResultMap }: { entry: EntryRaw; 
         <div className="text-xs text-neutral-500">role: {entry.message.role}</div>
       )}
       {blocks.map((block, i) => (
-        <ContentBlockRenderer key={i} block={block} cwd={cwd} toolMap={toolMap} toolResultMap={toolResultMap} />
+        <ContentBlockRenderer key={i} block={block} cwd={cwd} toolMap={toolMap} toolResultMap={toolResultMap} todoWriteDiffs={todoWriteDiffs} />
       ))}
     </div>
   );
@@ -256,7 +343,7 @@ function UserMessage({ entry, cwd, toolMap, toolResultMap }: { entry: EntryRaw; 
 
 type ToolTimestamps = Map<string, { useTs: string | null; resultTs: string | null }>;
 
-function AssistantMessage({ entry, cwd, toolResultMap, toolTimestamps, defaultModel }: { entry: EntryRaw; cwd: string; toolResultMap?: Map<string, string>; toolTimestamps?: ToolTimestamps; defaultModel?: string }) {
+function AssistantMessage({ entry, cwd, toolResultMap, toolTimestamps, defaultModel, todoWriteDiffs }: { entry: EntryRaw; cwd: string; toolResultMap?: Map<string, string>; toolTimestamps?: ToolTimestamps; defaultModel?: string; todoWriteDiffs?: Map<string, TodoWriteDiff> }) {
   const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
   const model = entry.message?.model ? String(entry.message.model) : null;
   const showModel = model && model !== defaultModel;
@@ -266,13 +353,13 @@ function AssistantMessage({ entry, cwd, toolResultMap, toolTimestamps, defaultMo
         <div className="text-xs text-neutral-500">{model}</div>
       )}
       {blocks.map((block, i) => (
-        <ContentBlockRenderer key={i} block={block} cwd={cwd} toolResultMap={toolResultMap} toolTimestamps={toolTimestamps} markdown />
+        <ContentBlockRenderer key={i} block={block} cwd={cwd} toolResultMap={toolResultMap} toolTimestamps={toolTimestamps} todoWriteDiffs={todoWriteDiffs} markdown />
       ))}
     </div>
   );
 }
 
-function ContentBlockRenderer({ block, cwd, toolMap, toolResultMap, toolTimestamps, markdown }: { block: ContentBlock; cwd: string; toolMap?: Map<string, ToolUseInfo>; toolResultMap?: Map<string, string>; toolTimestamps?: ToolTimestamps; markdown?: boolean }) {
+function ContentBlockRenderer({ block, cwd, toolMap, toolResultMap, toolTimestamps, todoWriteDiffs, markdown }: { block: ContentBlock; cwd: string; toolMap?: Map<string, ToolUseInfo>; toolResultMap?: Map<string, string>; toolTimestamps?: ToolTimestamps; todoWriteDiffs?: Map<string, TodoWriteDiff>; markdown?: boolean }) {
   switch (block.type) {
     case "text":
       return <TextBlock text={block.text ?? ""} cwd={cwd} markdown={markdown} />;
@@ -284,6 +371,7 @@ function ContentBlockRenderer({ block, cwd, toolMap, toolResultMap, toolTimestam
       if (block.name === "ExitPlanMode") return <ExitPlanModeBlock block={block} toolResultMap={toolResultMap} />;
       if (block.name === "Agent") return <SubagentToolUseBlock block={block} toolResultMap={toolResultMap} toolTimestamps={toolTimestamps} />;
       if (block.name === "Edit") return <EditToolUseBlock block={block} cwd={cwd} />;
+      if (block.name === "TodoWrite") return <TodoWriteBlock block={block} todoWriteDiffs={todoWriteDiffs} />;
       return <ToolUseBlock block={block} cwd={cwd} />;
     case "tool_result": {
       // Check if this is a subagent result
@@ -439,6 +527,50 @@ function EditToolUseBlock({ block, cwd }: { block: ContentBlock; cwd: string }) 
       {expanded && (oldStr || newStr) && (
         <div className="px-3 pb-3">
           <OldNewDiffView oldStr={oldStr} newStr={newStr} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+const TODO_STATUS_ICONS: Record<string, { icon: string; color: string; label: string }> = {
+  pending: { icon: "·", color: "text-neutral-500", label: "pending" },
+  in_progress: { icon: "▶", color: "text-blue-400", label: "in progress" },
+  completed: { icon: "✓", color: "text-green-400", label: "done" },
+  cancelled: { icon: "✗", color: "text-red-400/60", label: "cancelled" },
+};
+
+function TodoWriteBlock({ block, todoWriteDiffs }: { block: ContentBlock; todoWriteDiffs?: Map<string, TodoWriteDiff> }) {
+  const [expanded, setExpanded] = useState(true);
+  const diff = block.id && todoWriteDiffs ? todoWriteDiffs.get(block.id) : undefined;
+  const todos = (block.input?.todos as TodoItem[]) ?? [];
+  const items: TodoWriteDiff["items"] = diff?.items ?? todos.map((t) => ({ ...t }));
+
+  return (
+    <div className="border border-amber-900/50 rounded bg-amber-950/20">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 cursor-pointer hover:bg-amber-950/30"
+      >
+        <span className="text-neutral-500">{expanded ? "v" : ">"}</span>
+        <span className="font-semibold text-amber-400">TodoWrite</span>
+        {diff?.summary && <span className="text-neutral-500 truncate">{diff.summary}</span>}
+      </button>
+      {expanded && (
+        <div className="px-3 pb-2 space-y-0.5">
+          {items.map((item, i) => {
+            const si = TODO_STATUS_ICONS[item.status] ?? TODO_STATUS_ICONS.pending!;
+            const changeBg = item.change === "added" ? "bg-green-900/20"
+              : item.change === "status-changed" ? "bg-blue-900/20"
+              : item.change === "removed" ? "bg-red-900/20 line-through opacity-60"
+              : "";
+            return (
+              <div key={i} className={`flex items-start gap-2 px-2 py-1 rounded text-sm ${changeBg}`}>
+                <span className={`shrink-0 mt-0.5 ${si.color}`}>{si.icon}</span>
+                <span className="text-neutral-300">{item.content}</span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

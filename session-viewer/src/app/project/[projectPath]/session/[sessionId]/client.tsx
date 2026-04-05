@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { EntryCard, type SubagentLinks } from "@/components/entry-card";
 import { FilterBar } from "@/components/filter-bar";
-import { type ToolUseInfo } from "@/components/message-renderer";
+import { type ToolUseInfo, type TodoItem, type TodoWriteDiff, computeTodoWriteDiff } from "@/components/message-renderer";
 import {
   buildDisplayItems,
   type SessionEntry,
@@ -40,6 +40,7 @@ function DisplayItemView({
   defaultModel,
   subagentLinks,
   highlightEntry,
+  todoWriteDiffs,
 }: {
   item: DisplayItem;
   projectPath: string;
@@ -51,6 +52,7 @@ function DisplayItemView({
   defaultModel?: string;
   subagentLinks?: SubagentLinks;
   highlightEntry?: number | null;
+  todoWriteDiffs?: Map<string, TodoWriteDiff>;
 }) {
   if (item.kind === "entry") {
     return (
@@ -63,6 +65,7 @@ function DisplayItemView({
         toolTimestamps={toolTimestamps}
         defaultModel={defaultModel}
         subagentLinks={subagentLinks}
+        todoWriteDiffs={todoWriteDiffs}
       />
     );
   }
@@ -78,6 +81,7 @@ function DisplayItemView({
       defaultModel={defaultModel}
       subagentLinks={subagentLinks}
       highlightEntry={highlightEntry}
+      todoWriteDiffs={todoWriteDiffs}
     />
   );
 }
@@ -93,6 +97,7 @@ function CollapsedGroupView({
   defaultModel,
   subagentLinks,
   highlightEntry,
+  todoWriteDiffs,
 }: {
   group: CollapsedGroup;
   projectPath: string;
@@ -104,6 +109,7 @@ function CollapsedGroupView({
   defaultModel?: string;
   subagentLinks?: SubagentLinks;
   highlightEntry?: number | null;
+  todoWriteDiffs?: Map<string, TodoWriteDiff>;
 }) {
   const containsHighlight = highlightEntry != null && collapsedGroupContains(group, highlightEntry);
   const [expanded, setExpanded] = useState(expandAll || containsHighlight);
@@ -159,6 +165,7 @@ function CollapsedGroupView({
           defaultModel={defaultModel}
           subagentLinks={subagentLinks}
           highlightEntry={highlightEntry}
+          todoWriteDiffs={todoWriteDiffs}
         />
       ))}
     </div>
@@ -177,6 +184,7 @@ function Layer2ItemView({
   defaultModel,
   subagentLinks,
   highlightEntry,
+  todoWriteDiffs,
 }: {
   item: Layer2Item;
   projectPath: string;
@@ -189,6 +197,7 @@ function Layer2ItemView({
   defaultModel?: string;
   subagentLinks?: SubagentLinks;
   highlightEntry?: number | null;
+  todoWriteDiffs?: Map<string, TodoWriteDiff>;
 }) {
   if (item.kind === "entry") {
     return (
@@ -201,6 +210,7 @@ function Layer2ItemView({
         toolTimestamps={toolTimestamps}
         defaultModel={defaultModel}
         subagentLinks={subagentLinks}
+        todoWriteDiffs={todoWriteDiffs}
       />
     );
   }
@@ -217,6 +227,7 @@ function Layer2ItemView({
       defaultModel={defaultModel}
       subagentLinks={subagentLinks}
       highlightEntry={highlightEntry}
+      todoWriteDiffs={todoWriteDiffs}
     />
   );
 }
@@ -233,6 +244,7 @@ function TopicalGroupView({
   defaultModel,
   subagentLinks,
   highlightEntry,
+  todoWriteDiffs,
 }: {
   group: TopicalGroup;
   projectPath: string;
@@ -245,6 +257,7 @@ function TopicalGroupView({
   defaultModel?: string;
   subagentLinks?: SubagentLinks;
   highlightEntry?: number | null;
+  todoWriteDiffs?: Map<string, TodoWriteDiff>;
 }) {
   const containsHighlight = highlightEntry != null && group.entries.some((e) => e.lineIndex === highlightEntry);
   const [expanded, setExpanded] = useState(expandAll || !!autoExpand || containsHighlight);
@@ -290,6 +303,7 @@ function TopicalGroupView({
             toolTimestamps={toolTimestamps}
             defaultModel={defaultModel}
             subagentLinks={subagentLinks}
+            todoWriteDiffs={todoWriteDiffs}
           />
         ))}
       </div>
@@ -468,6 +482,25 @@ export function SessionClient({
     return combined;
   }, [entries]);
 
+  // TodoWrite diffs: for each TodoWrite tool_use, compute what changed vs the previous one
+  const todoWriteDiffs = useMemo(() => {
+    const diffs = new Map<string, TodoWriteDiff>();
+    let prevTodos: TodoItem[] | null = null;
+    for (const entry of entries) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const blocks: unknown[] = (entry.raw as any)?.message?.content ?? [];
+      if (!Array.isArray(blocks)) continue;
+      for (const b of blocks as Array<Record<string, unknown>>) {
+        if (b.type === "tool_use" && b.name === "TodoWrite" && typeof b.id === "string") {
+          const todos = ((b.input as Record<string, unknown>)?.todos as TodoItem[]) ?? [];
+          diffs.set(b.id, computeTodoWriteDiff(todos, prevTodos));
+          prevTodos = todos;
+        }
+      }
+    }
+    return diffs;
+  }, [entries]);
+
   // Subagent cross-references: maps entry lineIndex of call → lineIndex of result, and vice versa.
   // Also maps call lineIndex → tool_use_id for linking.
   const subagentLinks = useMemo(() => {
@@ -569,6 +602,7 @@ export function SessionClient({
             defaultModel={defaultModel}
             subagentLinks={subagentLinks}
             highlightEntry={highlightEntry}
+            todoWriteDiffs={todoWriteDiffs}
           />
         ))}
       </div>

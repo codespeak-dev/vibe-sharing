@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { JsonViewer } from "./json-viewer";
-import { MessageRenderer, hasRenderedView, getHeaderExtra, isHeaderOnly, getCollapsedPreview, getDisplayType, entryReferencesPlans, entryHasThinking, getThinkingPreview, getEntryIdeTags, type ToolUseInfo } from "./message-renderer";
+import { MessageRenderer, hasRenderedView, getHeaderExtra, isHeaderOnly, getCollapsedPreview, getDisplayType, entryReferencesPlans, entryHasThinking, getThinkingPreview, getEntryIdeTags, type ToolUseInfo, type TodoWriteDiff } from "./message-renderer";
 import { truncate, foldCwd, shortenPath } from "@/lib/format";
 import { formatDateTime } from "@/lib/format";
 import { classifyTag, type ClassifyEntry } from "@/lib/classify";
@@ -40,7 +40,7 @@ export interface SubagentLinks {
   resultToCall: Map<number, number>;
 }
 
-export function EntryCard({ entry, forceExpanded, projectPath, toolMap, toolResultMap, toolTimestamps, defaultModel, subagentLinks }: { entry: SessionEntry; forceExpanded?: boolean; projectPath?: string; toolMap?: Map<string, ToolUseInfo>; toolResultMap?: Map<string, string>; toolTimestamps?: Map<string, { useTs: string | null; resultTs: string | null }>; defaultModel?: string; subagentLinks?: SubagentLinks }) {
+export function EntryCard({ entry, forceExpanded, projectPath, toolMap, toolResultMap, toolTimestamps, defaultModel, subagentLinks, todoWriteDiffs }: { entry: SessionEntry; forceExpanded?: boolean; projectPath?: string; toolMap?: Map<string, ToolUseInfo>; toolResultMap?: Map<string, string>; toolTimestamps?: Map<string, { useTs: string | null; resultTs: string | null }>; defaultModel?: string; subagentLinks?: SubagentLinks; todoWriteDiffs?: Map<string, TodoWriteDiff> }) {
   const canRender = hasRenderedView(entry.type);
   const headerOnly = isHeaderOnly(entry.raw);
   const displayType = getDisplayType(entry.raw);
@@ -80,9 +80,14 @@ export function EntryCard({ entry, forceExpanded, projectPath, toolMap, toolResu
       const displayName = b.name === "Agent"
         ? (subagentType ? `Subagent:${subagentType}` : "Subagent")
         : b.name;
-      const detail = b.name === "Agent"
-        ? (inp?.description as string) ?? (inp?.prompt as string)?.slice(0, 80) ?? null
-        : toolDetail({ name: b.name, input: inp }, cwd);
+      let detail: string | null;
+      if (b.name === "Agent") {
+        detail = (inp?.description as string) ?? (inp?.prompt as string)?.slice(0, 80) ?? null;
+      } else if (b.name === "TodoWrite" && todoWriteDiffs && typeof b.id === "string") {
+        detail = todoWriteDiffs.get(b.id)?.summary ?? null;
+      } else {
+        detail = toolDetail({ name: b.name, input: inp }, cwd);
+      }
       toolInfos.push({ name: displayName, detail });
     } else if (b.type === "tool_result" && typeof b.tool_use_id === "string" && toolMap) {
       const info = toolMap.get(b.tool_use_id);
@@ -219,7 +224,7 @@ export function EntryCard({ entry, forceExpanded, projectPath, toolMap, toolResu
       {showBody && (
         <div className={`p-3 border-t ${isUser ? "border-blue-800/30" : isAssistant ? "border-green-800/30" : "border-neutral-800"}`}>
           {view === "rendered" ? (
-            <MessageRenderer entry={entry.raw} cwd={cwd} toolMap={toolMap} toolResultMap={toolResultMap} toolTimestamps={toolTimestamps} defaultModel={defaultModel} />
+            <MessageRenderer entry={entry.raw} cwd={cwd} toolMap={toolMap} toolResultMap={toolResultMap} toolTimestamps={toolTimestamps} defaultModel={defaultModel} todoWriteDiffs={todoWriteDiffs} />
           ) : (
             <JsonViewer data={entry.raw} defaultCollapsed={false} />
           )}
