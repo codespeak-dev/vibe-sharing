@@ -28,7 +28,7 @@ When working on a metric:
 
 When advancing a metric's status, update both the emoji and the cursor link. The link format is:
 ```
-cursor://anthropic.claude-code/open?prompt=<url-encoded prompt>
+vscode://anthropic.claude-code/open?prompt=<url-encoded prompt>
 ```
 Where the prompt is: `Read and follow intent/vibe-personality/prompts/<next-state>.md for metric: <Metric Name> (<metric-file>.md)`
 
