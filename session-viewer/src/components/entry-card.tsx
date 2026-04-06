@@ -40,7 +40,7 @@ export interface SubagentLinks {
   resultToCall: Map<number, number>;
 }
 
-export function EntryCard({ entry, forceExpanded, projectPath, toolMap, toolResultMap, toolTimestamps, defaultModel, subagentLinks, todoWriteDiffs }: { entry: SessionEntry; forceExpanded?: boolean; projectPath?: string; toolMap?: Map<string, ToolUseInfo>; toolResultMap?: Map<string, string>; toolTimestamps?: Map<string, { useTs: string | null; resultTs: string | null }>; defaultModel?: string; subagentLinks?: SubagentLinks; todoWriteDiffs?: Map<string, TodoWriteDiff> }) {
+export function EntryCard({ entry, forceExpanded, projectPath, toolMap, toolResultMap, toolTimestamps, defaultModel, subagentLinks, todoWriteDiffs, disableToggle }: { entry: SessionEntry; forceExpanded?: boolean; projectPath?: string; toolMap?: Map<string, ToolUseInfo>; toolResultMap?: Map<string, string>; toolTimestamps?: Map<string, { useTs: string | null; resultTs: string | null }>; defaultModel?: string; subagentLinks?: SubagentLinks; todoWriteDiffs?: Map<string, TodoWriteDiff>; disableToggle?: boolean }) {
   const canRender = hasRenderedView(entry.type);
   const headerOnly = isHeaderOnly(entry.raw);
   const displayType = getDisplayType(entry.raw);
@@ -129,8 +129,8 @@ export function EntryCard({ entry, forceExpanded, projectPath, toolMap, toolResu
     <div id={`entry-${entry.lineIndex}`} className={`border rounded-lg overflow-hidden ${containerClass}`}>
       {/* Header */}
       <div
-        className={`flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${headerClass}`}
-        onClick={() => setExpanded(!expanded)}
+        className={`flex items-center gap-2 px-3 py-2 ${disableToggle ? "" : "cursor-pointer"} transition-colors ${headerClass}`}
+        onClick={disableToggle ? undefined : () => setExpanded(!expanded)}
       >
         <span className={`text-[10px] shrink-0 ${accentClass}`}>{expanded ? "\u25BC" : "\u25B6"}</span>
         <span className={`text-[10px] font-mono w-8 text-right shrink-0 ${accentClass}`}>

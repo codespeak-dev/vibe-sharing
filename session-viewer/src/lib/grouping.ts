@@ -2,7 +2,7 @@
  * Three-layer grouping pipeline for the session viewer.
  *
  * Layer 1: Classify each entry (expanded/collapsed, primary, topical group)
- * Layer 2: Merge consecutive entries with same topical group
+ * Layer 2: Pair each tool_use with its adjacent tool_result; group consecutive progress entries
  * Layer 3: Collect non-primary items between primary items into collapsed groups
  */
 
@@ -37,7 +37,7 @@ export interface ClassifiedEntry {
   defaultExpanded: boolean;
 }
 
-export type TopicalGroupType = "tool-call" | "noise";
+export type TopicalGroupType = "tool-call" | "progress" | "noise";
 
 export interface TopicalGroup {
   kind: "topical-group";
@@ -73,20 +73,6 @@ export interface DisplayOverrides {
   expanded?: Partial<Record<EntryTag, boolean>>;
 }
 
-/** Which tags participate in topical grouping, and what group type?
- *  Subagents are NOT grouped with tool calls — they stay standalone.
- *  Filler (thinking-only) does NOT join tool-call groups — thinking breaks the run.
- *  Only system hooks and noise can sit inside a tool-call group without breaking it. */
-const TOPICAL_MAP: Partial<Record<EntryTag, TopicalGroupType>> = {
-  "tool-call": "tool-call",
-  "tool-result": "tool-call",
-  "noise": "noise",
-};
-
-/** Tags that can sit inside an active tool-call group without breaking it.
- *  Thinking-only assistant entries ("filler") are NOT included — they break tool runs. */
-const TOOL_GROUP_JOINERS = new Set<EntryTag>(["noise"]);
-
 function classify(entry: SessionEntry, overrides?: DisplayOverrides): ClassifiedEntry {
   const tag = classifyTag(asClassifyEntry(entry));
   const isPrimary = overrides?.primary?.[tag] ?? DEFAULT_PRIMARY_TAGS.has(tag);
@@ -99,31 +85,91 @@ function classify(entry: SessionEntry, overrides?: DisplayOverrides): Classified
   };
 }
 
-/** Get the topical group type for an entry, or null if standalone. */
-function topicalType(entry: SessionEntry): TopicalGroupType | null {
-  return TOPICAL_MAP[classifyTag(asClassifyEntry(entry))] ?? null;
-}
-
 // ── Layer 2: Topical Grouping ──────────────────────────────────────
 
-/** Topical group summary: e.g. "1 Read" or "3 Read, 2 Bash". */
-function toolCallSummary(entries: SessionEntry[]): string {
-  const counts = new Map<string, number>();
-  for (const e of entries) {
-    for (const name of getToolNames(asClassifyEntry(e))) {
-      const label = name === "Agent" ? "Subagent" : name;
-      counts.set(label, (counts.get(label) ?? 0) + 1);
+/**
+ * Light noise: entries that can sit between a tool_use and its tool_result
+ * without breaking the pair. Progress is explicitly excluded — it breaks
+ * pairing (critical for the subagent case where hundreds of progress entries
+ * separate an Agent call from its result).
+ */
+const LIGHT_NOISE_TYPES = new Set([
+  "file-history-snapshot",
+  "queue-operation",
+  "saved_hook_context",
+  "progress",
+]);
+
+function isLightNoise(entry: SessionEntry): boolean {
+  const t = eType(asClassifyEntry(entry));
+  if (LIGHT_NOISE_TYPES.has(t)) return true;
+  if (t === "system") return true;
+  return false;
+}
+
+/** Tags that represent a tool_use entry (should be paired with tool_result). */
+const TOOL_USE_TAGS = new Set<EntryTag>(["tool-call", "subagent"]);
+
+/**
+ * Pre-scan to identify entries that are part of parallel tool call batches.
+ * A parallel batch is 2+ consecutive tool-call entries (skipping light noise)
+ * followed by their tool-result entries. All such entries stay standalone.
+ */
+function findParallelIndices(entries: SessionEntry[]): Set<number> {
+  const parallel = new Set<number>();
+  let i = 0;
+  while (i < entries.length) {
+    const tag = classifyTag(asClassifyEntry(entries[i]!));
+    if (!TOOL_USE_TAGS.has(tag)) { i++; continue; }
+
+    // Collect consecutive tool-call entries (skipping light noise)
+    const callIndices: number[] = [i];
+    let j = i + 1;
+    while (j < entries.length) {
+      if (isLightNoise(entries[j]!)) { j++; continue; }
+      if (TOOL_USE_TAGS.has(classifyTag(asClassifyEntry(entries[j]!)))) {
+        callIndices.push(j);
+        j++;
+        continue;
+      }
+      break;
+    }
+
+    if (callIndices.length >= 2) {
+      // Mark all call indices as parallel
+      for (const idx of callIndices) parallel.add(idx);
+      // Mark the corresponding tool-result entries that follow
+      let resultsNeeded = callIndices.length;
+      while (j < entries.length && resultsNeeded > 0) {
+        const t2 = classifyTag(asClassifyEntry(entries[j]!));
+        if (t2 === "tool-result") {
+          parallel.add(j);
+          resultsNeeded--;
+          j++;
+        } else if (isLightNoise(entries[j]!)) {
+          j++;
+        } else {
+          break;
+        }
+      }
+      i = j;
+    } else {
+      i++;
     }
   }
-  if (counts.size === 0) return `${entries.length} entries`;
+  return parallel;
+}
 
-  // For pure-TodoWrite groups, summarize the final todo state
-  if (counts.size === 1 && counts.has("TodoWrite")) {
-    const lastTodos = getLastTodoState(entries);
-    if (lastTodos) return lastTodos;
-  }
+/** Summary for a tool-call pair: tool name(s). */
+function toolCallPairSummary(toolUseEntry: SessionEntry): string {
+  const names = getToolNames(asClassifyEntry(toolUseEntry));
+  if (names.length === 0) return "tool call";
+  return names.map((n) => (n === "Agent" ? "Subagent" : n)).join(", ");
+}
 
-  return [...counts.entries()].map(([n, c]) => `${c} ${n}`).join(", ");
+/** Summary for a progress group. */
+function progressSummary(entries: SessionEntry[]): string {
+  return `${entries.length} progress`;
 }
 
 const TODO_ICONS: Record<string, string> = {
@@ -161,6 +207,7 @@ function getLastTodoState(entries: SessionEntry[]): string | null {
   return null;
 }
 
+/** Summary for a noise group (non-progress): counts by entry type. */
 function noiseSummary(entries: SessionEntry[]): string {
   const counts = new Map<string, number>();
   for (const e of entries) {
@@ -170,73 +217,120 @@ function noiseSummary(entries: SessionEntry[]): string {
   return [...counts.entries()].map(([t, c]) => `${c} ${t}`).join(" + ");
 }
 
-function groupSummary(type: TopicalGroupType, entries: SessionEntry[]): string {
-  return type === "tool-call" ? toolCallSummary(entries) : noiseSummary(entries);
-}
-
 function buildLayer2(entries: SessionEntry[], overrides?: DisplayOverrides): Layer2Item[] {
+  const parallelSet = findParallelIndices(entries);
   const items: Layer2Item[] = [];
-  let buf: SessionEntry[] = [];
-  let bufType: TopicalGroupType | null = null;
+  let i = 0;
 
-  const flush = () => {
-    if (buf.length > 0 && bufType !== null) {
-      if (buf.length === 1) {
-        // Single-entry group → just emit as a classified entry, no wrapper
-        items.push(classify(buf[0]!, overrides));
-      } else {
-        items.push({ kind: "topical-group", groupType: bufType, entries: buf, summary: groupSummary(bufType, buf) });
-      }
-      buf = [];
-      bufType = null;
-    }
-  };
-
-  for (const entry of entries) {
+  while (i < entries.length) {
+    const entry = entries[i]!;
     const tag = classifyTag(asClassifyEntry(entry));
-    const tt = topicalType(entry);
     const cls = classify(entry, overrides);
 
-    // Primary entries always standalone — flush any group first
+    // 1. Primary entries always standalone
     if (cls.isPrimary) {
-      flush();
       items.push(cls);
+      i++;
       continue;
     }
 
-    // Entry has an explicit topical group type (tool-call, tool-result, noise)
-    if (tt !== null) {
-      if (bufType === tt) {
-        buf.push(entry);
-      } else if (bufType === null) {
-        bufType = tt;
-        buf = [entry];
-      } else {
-        flush();
-        bufType = tt;
-        buf = [entry];
+    // 2. Parallel entries always standalone
+    if (parallelSet.has(i)) {
+      items.push(cls);
+      i++;
+      continue;
+    }
+
+    // 3. Progress runs → collect consecutive progress into a group
+    if (eType(asClassifyEntry(entry)) === "progress") {
+      const buf: SessionEntry[] = [entry];
+      let j = i + 1;
+      while (j < entries.length && eType(asClassifyEntry(entries[j]!)) === "progress") {
+        buf.push(entries[j]!);
+        j++;
       }
+      if (buf.length === 1) {
+        items.push(cls);
+      } else {
+        items.push({
+          kind: "topical-group",
+          groupType: "progress",
+          entries: buf,
+          summary: progressSummary(buf),
+        });
+      }
+      i = j;
       continue;
     }
 
-    // System hooks (filler with type "system") can join an active tool-call group
-    // but thinking-only entries break the group
-    if (tag === "filler" && eType(asClassifyEntry(entry)) === "system" && bufType === "tool-call") {
-      buf.push(entry);
+    // 4. Sequential tool_use → try to pair with adjacent tool_result
+    if (TOOL_USE_TAGS.has(tag)) {
+      let j = i + 1;
+      const noiseBuf: SessionEntry[] = [];
+      while (j < entries.length && isLightNoise(entries[j]!)) {
+        noiseBuf.push(entries[j]!);
+        j++;
+      }
+      const nextTag = j < entries.length ? classifyTag(asClassifyEntry(entries[j]!)) : null;
+      if (nextTag === "tool-result" && !parallelSet.has(j)) {
+        // Sequential pair: tool_use + light noise + tool_result
+        const groupEntries = [entry, ...noiseBuf, entries[j]!];
+        // Use TodoWrite summary if applicable
+        let summary = toolCallPairSummary(entry);
+        if (summary === "TodoWrite") {
+          const todoState = getLastTodoState(groupEntries);
+          if (todoState) summary = todoState;
+        }
+        items.push({
+          kind: "topical-group",
+          groupType: "tool-call",
+          entries: groupEntries,
+          summary,
+        });
+        i = j + 1;
+        continue;
+      }
+      // No adjacent result → standalone
+      items.push(cls);
+      i++;
       continue;
     }
 
-    // Noise entries can sit inside an active tool-call group
-    if (TOOL_GROUP_JOINERS.has(tag) && bufType === "tool-call") {
-      buf.push(entry);
+    // 5. Orphaned tool_result → standalone
+    if (tag === "tool-result") {
+      items.push(cls);
+      i++;
       continue;
     }
 
-    // Everything else is standalone — flush and emit
-    flush();
+    // 6. Non-progress noise → collect consecutive into noise group
+    if (tag === "noise") {
+      const buf: SessionEntry[] = [entry];
+      let j = i + 1;
+      while (j < entries.length) {
+        const nextTag = classifyTag(asClassifyEntry(entries[j]!));
+        if (nextTag !== "noise" || eType(asClassifyEntry(entries[j]!)) === "progress") break;
+        buf.push(entries[j]!);
+        j++;
+      }
+      if (buf.length === 1) {
+        items.push(cls);
+      } else {
+        items.push({
+          kind: "topical-group",
+          groupType: "noise",
+          entries: buf,
+          summary: noiseSummary(buf),
+        });
+      }
+      i = j;
+      continue;
+    }
+
+    // 7. Everything else (filler, subagent, misc, unclassified) → standalone
     items.push(cls);
+    i++;
   }
-  flush();
 
   return items;
 }
@@ -285,6 +379,24 @@ function groupDuration(items: Layer2Item[]): string | null {
   return formatDurationMs(maxTs - minTs);
 }
 
+/** Compute the time span across entries in a TopicalGroup. */
+export function topicalGroupDuration(entries: SessionEntry[]): string | null {
+  let minTs: number | null = null;
+  let maxTs: number | null = null;
+  for (const entry of entries) {
+    const ts = entry.timestamp;
+    if (!ts) continue;
+    try {
+      const t = new Date(ts).getTime();
+      if (isNaN(t)) continue;
+      if (minTs === null || t < minTs) minTs = t;
+      if (maxTs === null || t > maxTs) maxTs = t;
+    } catch { /* ignore */ }
+  }
+  if (minTs === null || maxTs === null || maxTs <= minTs) return null;
+  return formatDurationMs(maxTs - minTs);
+}
+
 /** Aggregate tool breakdown across all items in a collapsed group. */
 function toolBreakdown(items: Layer2Item[]): string {
   const counts = new Map<string, number>();
@@ -304,10 +416,13 @@ function toolBreakdown(items: Layer2Item[]): string {
 function collapsedSummary(items: Layer2Item[]): string {
   const tools = toolBreakdown(items);
   const noiseItems = items.filter((i) => i.kind === "topical-group" && i.groupType === "noise");
+  const progressItems = items.filter((i) => i.kind === "topical-group" && i.groupType === "progress");
   const noisePart = noiseItems.map((i) => (i as TopicalGroup).summary).join(", ");
+  const progressPart = progressItems.map((i) => (i as TopicalGroup).summary).join(", ");
 
   const parts: string[] = [];
   if (tools) parts.push(tools);
+  if (progressPart) parts.push(progressPart);
   if (noisePart) parts.push(noisePart);
   const standaloneCount = items.filter((i) => i.kind === "entry").length;
   if (standaloneCount > 0) parts.push(`${standaloneCount} other`);
