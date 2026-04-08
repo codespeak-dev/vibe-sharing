@@ -6,6 +6,11 @@
   "bin": {
     "codespeak-vibe-share": "./dist/index.js"
   },
+  "exports": {
+    "./sessions/*": "./dist/sessions/*.js",
+    "./utils/*": "./dist/utils/*.js",
+    "./config": "./dist/config.js"
+  },
   "files": [
     "dist"
   ],

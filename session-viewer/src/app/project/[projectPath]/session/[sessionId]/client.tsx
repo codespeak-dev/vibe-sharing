@@ -1,0 +1,463 @@
+"use client";
+
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { EntryCard } from "@/components/entry-card";
+import { FilterBar } from "@/components/filter-bar";
+import { type ToolUseInfo } from "@/components/message-renderer";
+import {
+  buildDisplayItems,
+  type SessionEntry,
+  type DisplayItem,
+  type ClassifiedEntry,
+  type CollapsedGroup,
+  type TopicalGroup,
+  type Layer2Item,
+} from "@/lib/grouping";
+
+// ── Rendering components ───────────────────────────────────────────
+
+function DisplayItemView({
+  item,
+  projectPath,
+  toolMap,
+  toolResultMap,
+  reapplyKey,
+  expandAll,
+  defaultModel,
+}: {
+  item: DisplayItem;
+  projectPath: string;
+  toolMap: Map<string, ToolUseInfo>;
+  toolResultMap: Map<string, string>;
+  reapplyKey: number;
+  expandAll: boolean;
+  defaultModel?: string;
+}) {
+  if (item.kind === "entry") {
+    return (
+      <EntryCard
+        entry={item.entry}
+        forceExpanded={expandAll || item.defaultExpanded}
+        projectPath={projectPath}
+        toolMap={toolMap}
+        toolResultMap={toolResultMap}
+        defaultModel={defaultModel}
+      />
+    );
+  }
+  return (
+    <CollapsedGroupView
+      group={item}
+      projectPath={projectPath}
+      toolMap={toolMap}
+      toolResultMap={toolResultMap}
+      reapplyKey={reapplyKey}
+      expandAll={expandAll}
+      defaultModel={defaultModel}
+    />
+  );
+}
+
+function CollapsedGroupView({
+  group,
+  projectPath,
+  toolMap,
+  toolResultMap,
+  reapplyKey,
+  expandAll,
+  defaultModel,
+}: {
+  group: CollapsedGroup;
+  projectPath: string;
+  toolMap: Map<string, ToolUseInfo>;
+  toolResultMap: Map<string, string>;
+  reapplyKey: number;
+  expandAll: boolean;
+  defaultModel?: string;
+}) {
+  const [expanded, setExpanded] = useState(expandAll);
+  const reapplyRef = useRef(reapplyKey);
+
+  // React to expandAll / reapply
+  useEffect(() => { if (expandAll) setExpanded(true); }, [expandAll]);
+  useEffect(() => {
+    if (reapplyRef.current !== reapplyKey) {
+      reapplyRef.current = reapplyKey;
+      setExpanded(false);
+    }
+  }, [reapplyKey]);
+
+  if (!expanded) {
+    return (
+      <button
+        onClick={() => setExpanded(true)}
+        className="w-full flex items-center text-[11px] text-neutral-600 hover:text-neutral-400 py-1.5 cursor-pointer transition-colors border border-neutral-800/50 rounded-lg hover:border-neutral-700"
+      >
+        <span className="flex-1 text-center">··· {group.summary} ···</span>
+        {group.duration && (
+          <span className="text-[10px] text-neutral-600 shrink-0 pr-3">{group.duration}</span>
+        )}
+      </button>
+    );
+  }
+
+  return (
+    <div className="space-y-2 bg-blue-950/20 border border-blue-900/30 rounded-lg p-2">
+      <button
+        onClick={() => setExpanded(false)}
+        className="w-full flex items-center text-[11px] text-neutral-500 hover:text-neutral-300 py-1 cursor-pointer transition-colors"
+      >
+        <span className="flex-1 text-center">▲ collapse {group.summary}</span>
+        {group.duration && (
+          <span className="text-[10px] text-neutral-600 shrink-0 pr-1">{group.duration}</span>
+        )}
+      </button>
+      {group.items.map((item, i) => (
+        <Layer2ItemView
+          key={layer2Key(item, i)}
+          item={item}
+          projectPath={projectPath}
+          toolMap={toolMap}
+          toolResultMap={toolResultMap}
+          reapplyKey={reapplyKey}
+          expandAll={expandAll}
+          autoExpand={group.items.length === 1 && item.kind === "topical-group"}
+          defaultModel={defaultModel}
+        />
+      ))}
+    </div>
+  );
+}
+
+function Layer2ItemView({
+  item,
+  projectPath,
+  toolMap,
+  toolResultMap,
+  reapplyKey,
+  expandAll,
+  autoExpand,
+  defaultModel,
+}: {
+  item: Layer2Item;
+  projectPath: string;
+  toolMap: Map<string, ToolUseInfo>;
+  toolResultMap: Map<string, string>;
+  reapplyKey: number;
+  expandAll: boolean;
+  autoExpand?: boolean;
+  defaultModel?: string;
+}) {
+  if (item.kind === "entry") {
+    return (
+      <EntryCard
+        entry={item.entry}
+        forceExpanded={expandAll || item.defaultExpanded}
+        projectPath={projectPath}
+        toolMap={toolMap}
+        toolResultMap={toolResultMap}
+        defaultModel={defaultModel}
+      />
+    );
+  }
+  return (
+    <TopicalGroupView
+      group={item}
+      projectPath={projectPath}
+      toolMap={toolMap}
+      toolResultMap={toolResultMap}
+      reapplyKey={reapplyKey}
+      expandAll={expandAll}
+      autoExpand={autoExpand}
+      defaultModel={defaultModel}
+    />
+  );
+}
+
+function TopicalGroupView({
+  group,
+  projectPath,
+  toolMap,
+  toolResultMap,
+  reapplyKey,
+  expandAll,
+  autoExpand,
+  defaultModel,
+}: {
+  group: TopicalGroup;
+  projectPath: string;
+  toolMap: Map<string, ToolUseInfo>;
+  toolResultMap: Map<string, string>;
+  reapplyKey: number;
+  expandAll: boolean;
+  autoExpand?: boolean;
+  defaultModel?: string;
+}) {
+  const [expanded, setExpanded] = useState(expandAll || !!autoExpand);
+  const reapplyRef = useRef(reapplyKey);
+
+  useEffect(() => { if (expandAll) setExpanded(true); }, [expandAll]);
+  useEffect(() => {
+    // Only react to reapply changes, not the initial mount
+    if (reapplyRef.current !== reapplyKey) {
+      reapplyRef.current = reapplyKey;
+      setExpanded(!!autoExpand);
+    }
+  }, [reapplyKey, autoExpand]);
+
+  if (!expanded) {
+    return (
+      <button
+        onClick={() => setExpanded(true)}
+        className="w-full text-left text-[11px] text-neutral-500 hover:text-neutral-300 py-1.5 px-3 cursor-pointer transition-colors border border-neutral-800/30 rounded-lg hover:border-neutral-700"
+      >
+        ▸ {group.summary}
+      </button>
+    );
+  }
+
+  return (
+    <div className="border border-neutral-800/30 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setExpanded(false)}
+        className="w-full text-left text-[11px] text-neutral-500 hover:text-neutral-300 py-1.5 px-3 cursor-pointer transition-colors"
+      >
+        ▾ {group.summary}
+      </button>
+      <div className="space-y-2 p-2 border-t border-indigo-900/30 bg-indigo-950/15">
+        {group.entries.map((entry) => (
+          <EntryCard
+            key={entry.lineIndex}
+            entry={entry}
+            projectPath={projectPath}
+            toolMap={toolMap}
+            toolResultMap={toolResultMap}
+            defaultModel={defaultModel}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function layer2Key(item: Layer2Item, index: number): string {
+  if (item.kind === "entry") return `e-${item.entry.lineIndex}`;
+  return `tg-${item.entries[0]?.lineIndex ?? index}`;
+}
+
+// ── Main client ────────────────────────────────────────────────────
+
+interface ApiResponse {
+  entries: SessionEntry[];
+  total: number;
+  hasMore: boolean;
+}
+
+const PAGE_SIZE = 500;
+
+export function SessionClient({
+  sessionId,
+  encodedProjectPath,
+  projectPath,
+}: {
+  sessionId: string;
+  encodedProjectPath: string;
+  projectPath: string;
+}) {
+  const [entries, setEntries] = useState<SessionEntry[]>([]);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const scrolledRef = useRef(false);
+  const loadingMoreRef = useRef(false);
+  const [expandAll, setExpandAll] = useState(false);
+  const [reapplyKey, setReapplyKey] = useState(0);
+
+  const [highlightEntry, setHighlightEntry] = useState<number | null>(() => {
+    if (typeof window === "undefined") return null;
+    const match = window.location.hash.match(/^#entry-(\d+)$/);
+    return match ? parseInt(match[1]!, 10) : null;
+  });
+
+  useEffect(() => {
+    const onHashChange = () => {
+      const match = window.location.hash.match(/^#entry-(\d+)$/);
+      setHighlightEntry(match ? parseInt(match[1]!, 10) : null);
+      scrolledRef.current = false;
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  const fetchPage = useCallback(
+    async (offset: number, append: boolean) => {
+      const url = `/api/session-entries?sessionId=${encodeURIComponent(sessionId)}&projectPath=${encodeURIComponent(encodedProjectPath)}&offset=${offset}&limit=${PAGE_SIZE}`;
+      try {
+        const res = await fetch(url);
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({ error: res.statusText }));
+          throw new Error(body.error ?? `HTTP ${res.status}`);
+        }
+        const data: ApiResponse = await res.json();
+        setEntries((prev) => (append ? [...prev, ...data.entries] : data.entries));
+        setTotal(data.total);
+        setHasMore(data.hasMore);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [sessionId, encodedProjectPath],
+  );
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    fetchPage(0, false).finally(() => setLoading(false));
+  }, [fetchPage]);
+
+  useEffect(() => {
+    if (highlightEntry == null || loading || scrolledRef.current) return;
+    const entryLoaded = entries.some((e) => e.lineIndex === highlightEntry);
+    if (!entryLoaded && hasMore) {
+      setLoadingMore(true);
+      fetchPage(entries.length, true).finally(() => setLoadingMore(false));
+      return;
+    }
+    if (entryLoaded) {
+      scrolledRef.current = true;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const el = document.getElementById(`entry-${highlightEntry}`);
+          if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            el.classList.add("ring-1", "ring-purple-500/60");
+          }
+        });
+      });
+    }
+  }, [highlightEntry, entries, loading, hasMore, fetchPage]);
+
+  // Eagerly load all remaining pages — with collapsed groups the DOM is small
+  useEffect(() => {
+    if (!hasMore || loadingMoreRef.current || loading) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    fetchPage(entries.length, true).finally(() => {
+      setLoadingMore(false);
+      loadingMoreRef.current = false;
+    });
+  }, [hasMore, entries.length, fetchPage, loading]);
+
+  const displayItems = useMemo(() => buildDisplayItems(entries), [entries]);
+
+  const toolMap = useMemo(() => {
+    const map = new Map<string, ToolUseInfo>();
+    for (const entry of entries) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const blocks: unknown[] = (entry.raw as any)?.message?.content ?? [];
+      if (!Array.isArray(blocks)) continue;
+      for (const b of blocks as Array<Record<string, unknown>>) {
+        if (b.type === "tool_use" && typeof b.id === "string" && typeof b.name === "string") {
+          map.set(b.id, { name: b.name, input: b.input as Record<string, unknown> | undefined });
+        }
+      }
+    }
+    return map;
+  }, [entries]);
+
+  const toolResultMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const entry of entries) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const blocks: unknown[] = (entry.raw as any)?.message?.content ?? [];
+      if (!Array.isArray(blocks)) continue;
+      for (const b of blocks as Array<Record<string, unknown>>) {
+        if (b.type === "tool_result" && typeof b.tool_use_id === "string") {
+          let content = "";
+          if (typeof b.content === "string") {
+            content = b.content;
+          } else if (Array.isArray(b.content)) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            content = (b.content as any[]).map((c) => (typeof c === "string" ? c : c.text ?? "")).join("\n");
+          }
+          map.set(b.tool_use_id, content);
+        }
+      }
+    }
+    return map;
+  }, [entries]);
+
+  // Model usage stats: sorted desc by count, most common = default
+  const { defaultModel, modelStats } = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const entry of entries) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const model = (entry.raw as any)?.message?.model;
+      if (typeof model === "string" && model) {
+        counts.set(model, (counts.get(model) ?? 0) + 1);
+      }
+    }
+    const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    const best = sorted[0]?.[0];
+    return { defaultModel: best, modelStats: sorted };
+  }, [entries]);
+
+  const handleExpandAll = useCallback(() => setExpandAll(true), []);
+  const handleReapply = useCallback(() => {
+    setExpandAll(false);
+    setReapplyKey((k) => k + 1);
+  }, []);
+
+  if (loading) {
+    return <div className="text-neutral-500 py-10 text-center">Loading session entries...</div>;
+  }
+
+  if (error) {
+    return <div className="text-red-400 py-10 text-center"><p>Error: {error}</p></div>;
+  }
+
+  if (entries.length === 0) {
+    return <div className="text-neutral-500 py-10 text-center">No entries found in this session.</div>;
+  }
+
+  return (
+    <div>
+      {modelStats.length > 0 && (
+        <div className="text-xs text-neutral-500 mb-2 flex items-center gap-2 flex-wrap">
+          <span>Models:</span>
+          {modelStats.map(([model, count]) => (
+            <span key={model} className="text-neutral-400">
+              {model} <span className="text-neutral-600">x{count}</span>
+              {model === defaultModel && <span className="text-neutral-600 ml-1">(default)</span>}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-sm text-neutral-500">
+          Showing {entries.length} of {total} entries
+        </p>
+        <FilterBar onExpandAll={handleExpandAll} onReapply={handleReapply} />
+      </div>
+      <div className="space-y-3">
+        {displayItems.map((item, i) => (
+          <DisplayItemView
+            key={item.kind === "entry" ? `e-${item.entry.lineIndex}` : `cg-${item.items[0]?.kind === "entry" ? item.items[0].entry.lineIndex : (item.items[0] as TopicalGroup)?.entries[0]?.lineIndex ?? i}`}
+            item={item}
+            projectPath={projectPath}
+            toolMap={toolMap}
+            toolResultMap={toolResultMap}
+            reapplyKey={reapplyKey}
+            expandAll={expandAll}
+            defaultModel={defaultModel}
+          />
+        ))}
+      </div>
+      {loadingMore && (
+        <div className="text-neutral-500 text-sm text-center py-4">Loading more entries...</div>
+      )}
+    </div>
+  );
+}
