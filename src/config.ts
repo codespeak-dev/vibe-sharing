@@ -50,6 +50,9 @@ export const CURSOR_WORKSPACE_STORAGE_DIR = path.join(
   "workspaceStorage",
 );
 
+export const OPENCODE_DATA_DIR = path.join(home, ".local", "share", "opencode");
+export const OPENCODE_DB_PATH = path.join(OPENCODE_DATA_DIR, "opencode.db");
+
 export const CLINE_DIR = path.join(home, ".cline");
 export const CLINE_TASKS_DIR = path.join(CLINE_DIR, "data", "tasks");
 export const CLINE_HISTORY_FILE = path.join(
