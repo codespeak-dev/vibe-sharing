@@ -436,6 +436,11 @@ export class CursorProvider implements AgentProvider {
 
     // Find workspace storage directory (for plan registry + state extraction)
     await this.findWorkspaceStorageDir(context.projectPath);
+    // Ensure transcript/terminal files are collected even for Composer-only projects
+    // (projects with no entries in ~/.cursor/chats/ never reach addProjectSlug via Strategy A/B)
+    if (this.workspaceStorageDir) {
+      this.addProjectSlug(context.projectPath);
+    }
 
     // Strategy C: Discover Composer sessions from workspace state.vscdb
     const composerSessions = await this.findComposerSessions(seenIds);
