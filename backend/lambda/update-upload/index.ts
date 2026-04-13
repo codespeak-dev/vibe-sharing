@@ -5,7 +5,13 @@ import { ok, badRequest, notFound, serverError } from "../shared/response";
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const TABLE_NAME = process.env.TABLE_NAME!;
-const MAX_NOTES_LENGTH = 2000;
+
+const ALLOWED_FIELDS: Record<string, number> = {
+  userEmail: 320,
+  userName: 200,
+  repoUrl: 500,
+  notes: 2000,
+};
 
 export async function handler(
   event: APIGatewayProxyEventV2
@@ -15,27 +21,58 @@ export async function handler(
     if (!uploadId) return badRequest("Missing uploadId");
 
     const body = JSON.parse(event.body || "{}");
-    if (typeof body.notes !== "string") return badRequest("notes must be a string");
-    if (body.notes.length > MAX_NOTES_LENGTH) return badRequest(`notes must be at most ${MAX_NOTES_LENGTH} characters`);
 
-    const notes = body.notes.trim();
+    // Build SET and REMOVE clauses from allowed fields
+    const setExprs: string[] = [];
+    const removeExprs: string[] = [];
+    const names: Record<string, string> = {};
+    const values: Record<string, string> = {};
+
+    for (const [field, maxLen] of Object.entries(ALLOWED_FIELDS)) {
+      if (!(field in body)) continue;
+
+      const val = body[field];
+      if (val !== null && val !== undefined && typeof val !== "string") {
+        return badRequest(`${field} must be a string or null`);
+      }
+
+      names[`#${field}`] = field;
+
+      if (val === null || val === undefined || val === "") {
+        removeExprs.push(`#${field}`);
+      } else {
+        const trimmed = val.slice(0, maxLen);
+        setExprs.push(`#${field} = :${field}`);
+        values[`:${field}`] = trimmed;
+      }
+    }
+
+    if (setExprs.length === 0 && removeExprs.length === 0) {
+      return badRequest("No valid fields to update");
+    }
+
+    let updateExpression = "";
+    if (setExprs.length > 0) updateExpression += "SET " + setExprs.join(", ");
+    if (removeExprs.length > 0) updateExpression += " REMOVE " + removeExprs.join(", ");
 
     const result = await ddb.send(
       new UpdateCommand({
         TableName: TABLE_NAME,
         Key: { uploadId },
-        UpdateExpression: "SET notes = :notes",
+        UpdateExpression: updateExpression.trim(),
         ConditionExpression: "attribute_exists(uploadId)",
-        ExpressionAttributeValues: { ":notes": notes },
+        ExpressionAttributeNames: names,
+        ...(Object.keys(values).length > 0 && { ExpressionAttributeValues: values }),
         ReturnValues: "ALL_NEW",
       })
     );
 
-    return ok({ uploadId, notes: result.Attributes?.notes });
+    return ok({ uploadId, updated: result.Attributes });
   } catch (err: any) {
     if (err.name === "ConditionalCheckFailedException") {
       return notFound("Upload not found");
     }
+    if (err instanceof SyntaxError) return badRequest("Invalid JSON body");
     console.error("UpdateUpload error:", err);
     return serverError("Internal server error");
   }

@@ -11,6 +11,8 @@
     <div class="header">
       <h1>Vibe Share</h1>
       <div class="header-actions">
+        <button id="undo-btn" class="btn btn-undo" style="display: none;">Undo</button>
+        <button id="upload-btn" class="btn">Upload</button>
         <a href="internal-emails.html" class="btn">Internal Emails</a>
         <button id="refresh-btn" class="btn">Refresh</button>
         <button id="logout-btn" class="btn">Logout</button>
@@ -54,6 +56,27 @@
           </thead>
           <tbody id="threads-body"></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="upload-modal" class="modal" style="display: none;">
+    <div class="modal-content upload-modal-content">
+      <div class="modal-header">
+        <h3>Upload ZIP Archive</h3>
+        <button id="upload-close" class="btn-close">&times;</button>
+      </div>
+      <div class="upload-form">
+        <label>ZIP File <input type="file" id="upload-file" accept=".zip" /></label>
+        <label>Email <input type="email" id="upload-email" placeholder="user@example.com" /></label>
+        <label>Name <input type="text" id="upload-name" placeholder="User name" /></label>
+        <label>Repo URL <input type="text" id="upload-repo" placeholder="https://github.com/..." /></label>
+        <div class="upload-actions">
+          <button id="upload-submit" class="btn-add" disabled>Upload</button>
+          <button id="upload-cancel" class="btn-remove">Cancel</button>
+        </div>
+        <div id="upload-progress" style="display: none;"></div>
+        <div id="upload-error" style="display: none;"></div>
       </div>
     </div>
   </div>

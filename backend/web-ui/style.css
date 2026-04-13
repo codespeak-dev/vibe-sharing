@@ -218,6 +218,110 @@ a.btn {
   resize: vertical;
 }
 
+/* ─── Editable cells ─── */
+
+.editable-cell {
+  cursor: default;
+}
+
+.editable-cell .editable-value {
+  border-bottom: 1px dashed transparent;
+  cursor: pointer;
+}
+
+.editable-cell:hover .editable-value {
+  border-bottom-color: #bbb;
+}
+
+.editable-cell .editable-email {
+  font-size: 0.8rem;
+  color: #888;
+}
+
+.editable-placeholder {
+  color: #aaa;
+  font-style: italic;
+  cursor: pointer;
+}
+
+.inline-edit-input {
+  display: block;
+  width: 100%;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid #2563eb;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  margin-bottom: 0.25rem;
+  outline: none;
+}
+
+.inline-edit-input:last-child {
+  margin-bottom: 0;
+}
+
+/* ─── Undo button ─── */
+
+.btn-undo {
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+
+.btn-undo:hover {
+  background: rgba(245, 158, 11, 0.15);
+}
+
+/* ─── Upload form ─── */
+
+.upload-modal-content {
+  max-width: 480px;
+}
+
+.upload-form {
+  padding: 1.25rem;
+}
+
+.upload-form label {
+  display: block;
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.upload-form input[type="text"],
+.upload-form input[type="email"] {
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.upload-form input[type="file"] {
+  display: block;
+  margin-top: 0.25rem;
+}
+
+.upload-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+#upload-progress {
+  margin-top: 0.75rem;
+  color: #2563eb;
+  font-size: 0.875rem;
+}
+
+#upload-error {
+  margin-top: 0.75rem;
+  color: #dc2626;
+  font-size: 0.875rem;
+}
+
 /* ─── Browse button ─── */
 
 .btn-browse {
