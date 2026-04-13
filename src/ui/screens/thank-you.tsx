@@ -9,8 +9,7 @@ import { discoverAllSessions } from "../../sessions/discovery.js";
 import { buildManifest } from "../../archive/manifest.js";
 import { createArchive, cleanupArchive } from "../../archive/archiver.js";
 import { uploadArchive, isBackendAvailable, saveLocally } from "../../upload/upload.js";
-import { getGitRemoteUrl, getRepoName, getGitWorktrees } from "../../utils/paths.js";
-import { getFileSize } from "../../utils/fs-helpers.js";
+import { getGitRemoteUrl, getGitWorktrees } from "../../utils/paths.js";
 import { MAX_ARCHIVE_SIZE_MB } from "../../config.js";
 import path from "node:path";
 
@@ -161,8 +160,7 @@ export function ThankYouScreen({
 
         const sizeMB = sizeBytes / (1024 * 1024);
         if (sizeMB > MAX_ARCHIVE_SIZE_MB) {
-          setError(`Archive too large (${sizeMB.toFixed(1)} MB). Max is ${MAX_ARCHIVE_SIZE_MB} MB.`);
-          onError?.();
+          setError(`Archive too large (${sizeMB.toFixed(1)} MB, max is ${MAX_ARCHIVE_SIZE_MB} MB). Try running with --no-sessions to exclude AI session data.`);
           return;
         }
 
@@ -214,7 +212,6 @@ export function ThankYouScreen({
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : String(err));
-        onError?.();
       } finally {
         if (zipPath) cleanupArchive(zipPath);
         if (bundlePath) cleanupBundle(bundlePath);
@@ -227,6 +224,12 @@ export function ThankYouScreen({
   }, [phase, projectPath, onDone, onError]);
 
   useInput((input, key) => {
+    if (error) {
+      if (key.escape || key.return) {
+        onError?.();
+      }
+      return;
+    }
     if (phase !== "done") return;
     if (key.return && onShareAnother) {
       onShareAnother();
@@ -239,6 +242,7 @@ export function ThankYouScreen({
     return (
       <Box flexDirection="column">
         <Text color="red">Error: {error}</Text>
+        <KeyHint hints={[{ key: "Esc", label: "go back" }]} />
       </Box>
     );
   }

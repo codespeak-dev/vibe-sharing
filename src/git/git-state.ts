@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
@@ -6,6 +7,8 @@ import { promisify } from "node:util";
 import { getGitRoot, getGitBranch, getGitCommit } from "../utils/paths.js";
 import { walkDirectory } from "../utils/fs-helpers.js";
 import { shouldExcludeDefault } from "../utils/excludes.js";
+import { MAX_ARCHIVE_SIZE_MB } from "../config.js";
+import { VibeError } from "../utils/errors.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -59,23 +62,55 @@ async function gitLines(
     .filter(Boolean);
 }
 
+const BUNDLE_SIZE_LIMIT = MAX_ARCHIVE_SIZE_MB * 1024 * 1024;
+
 /**
- * Create a git bundle containing all refs.
- * Returns the absolute path to the bundle file in a temp directory.
+ * Create a git bundle. Tries `--all` first; if the result exceeds the archive
+ * size limit, falls back to `HEAD` only. Throws a VibeError if even HEAD is
+ * too large. Returns null if bundle creation fails entirely (e.g. no commits).
  */
 async function createGitBundle(cwd: string): Promise<string | null> {
   const bundlePath = path.join(
     os.tmpdir(),
     `codespeak-bundle-${Date.now()}.bundle`,
   );
+
+  // Try --all first
   try {
     await execFileAsync("git", ["bundle", "create", bundlePath, "--all"], {
       cwd,
       maxBuffer: 50 * 1024 * 1024,
     });
-    return bundlePath;
+    const { size } = await fsp.stat(bundlePath);
+    if (size <= BUNDLE_SIZE_LIMIT) {
+      return bundlePath;
+    }
+    // Too large — discard and try HEAD only
+    await fsp.unlink(bundlePath).catch(() => {});
   } catch {
-    // Bundle creation can fail for repos with no commits/refs
+    // Bundle creation failed (no commits/refs, etc.)
+    await fsp.unlink(bundlePath).catch(() => {});
+    return null;
+  }
+
+  // Fall back to HEAD only
+  try {
+    await execFileAsync("git", ["bundle", "create", bundlePath, "HEAD"], {
+      cwd,
+      maxBuffer: 50 * 1024 * 1024,
+    });
+    const { size } = await fsp.stat(bundlePath);
+    if (size <= BUNDLE_SIZE_LIMIT) {
+      return bundlePath;
+    }
+    await fsp.unlink(bundlePath).catch(() => {});
+    throw new VibeError(
+      `Git bundle exceeds ${MAX_ARCHIVE_SIZE_MB} MB even with HEAD only.`,
+      "Your repository history contains very large files. Consider cleaning up large blobs with git-filter-repo before sharing.",
+    );
+  } catch (err) {
+    if (err instanceof VibeError) throw err;
+    // HEAD bundle failed (detached HEAD with no commits, etc.)
     return null;
   }
 }
