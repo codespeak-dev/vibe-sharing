@@ -43,6 +43,7 @@ export async function handler(
         userName: r.userName,
         userEmail: r.userEmail,
         repoUrl: r.repoUrl,
+        notes: r.notes,
         downloadUrl: await buildDownloadUrl(r.s3Key, r.filename),
       }))
     );

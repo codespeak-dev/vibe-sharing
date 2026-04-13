@@ -11,4 +11,5 @@ export interface UploadRecord {
   userEmail?: string;
   userName?: string;
   repoUrl?: string;
+  notes?: string;
 }

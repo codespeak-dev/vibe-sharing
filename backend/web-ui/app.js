@@ -124,7 +124,9 @@ function renderUploads(uploads) {
       <td>${formatSize(u.sizeBytes)}</td>
       <td>${formatUser(u)}</td>
       <td>${formatRepoUrl(u.repoUrl)}</td>
+      <td class="notes-cell" data-upload-id="${escapeHtml(u.uploadId)}"><span class="notes-text">${u.notes ? escapeHtml(u.notes) : '<span class="notes-placeholder">Add note...</span>'}</span></td>
       <td>${formatDate(u.confirmedAt || u.createdAt)}</td>
+      <td><button class="btn-browse" data-upload-id="${escapeHtml(u.uploadId)}" data-filename="${escapeHtml(u.filename)}">Browse</button></td>
     </tr>`;
     })
     .join("");
@@ -198,6 +200,193 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// ─── Notes inline editing ───
+
+async function updateNotes(uploadId, notes) {
+  const cfg = getConfig();
+  const token = getIdToken();
+
+  const response = await fetch(`${cfg.apiBaseUrl}/api/v1/uploads/${encodeURIComponent(uploadId)}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ notes }),
+  });
+
+  if (response.status === 401) {
+    redirectToLogin();
+    return;
+  }
+  if (!response.ok) throw new Error(`API error: ${response.status}`);
+  return response.json();
+}
+
+function startNotesEdit(cell) {
+  if (cell.querySelector("textarea")) return; // already editing
+
+  const uploadId = cell.dataset.uploadId;
+  const upload = allUploads.find((u) => u.uploadId === uploadId);
+  const currentNotes = upload?.notes || "";
+
+  const textarea = document.createElement("textarea");
+  textarea.className = "notes-input";
+  textarea.value = currentNotes;
+  textarea.maxLength = 2000;
+
+  cell.textContent = "";
+  cell.appendChild(textarea);
+  textarea.focus();
+
+  async function save() {
+    const newNotes = textarea.value.trim();
+    try {
+      await updateNotes(uploadId, newNotes);
+      if (upload) upload.notes = newNotes;
+      cell.innerHTML = newNotes
+        ? `<span class="notes-text">${escapeHtml(newNotes)}</span>`
+        : '<span class="notes-text"><span class="notes-placeholder">Add note...</span></span>';
+    } catch (err) {
+      cell.innerHTML = currentNotes
+        ? `<span class="notes-text">${escapeHtml(currentNotes)}</span>`
+        : '<span class="notes-text"><span class="notes-placeholder">Add note...</span></span>';
+      console.error("Failed to save notes:", err);
+    }
+  }
+
+  textarea.addEventListener("blur", save);
+  textarea.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      textarea.blur();
+    }
+    if (e.key === "Escape") {
+      textarea.value = currentNotes;
+      textarea.blur();
+    }
+  });
+}
+
+// ─── File tree modal ───
+
+const fileTreeCache = new Map();
+
+async function fetchFileTree(uploadId) {
+  if (fileTreeCache.has(uploadId)) return fileTreeCache.get(uploadId);
+
+  const cfg = getConfig();
+  const token = getIdToken();
+
+  const response = await fetch(
+    `${cfg.apiBaseUrl}/api/v1/uploads/${encodeURIComponent(uploadId)}/files`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+
+  if (response.status === 401) {
+    redirectToLogin();
+    return [];
+  }
+  if (!response.ok) throw new Error(`API error: ${response.status}`);
+
+  const data = await response.json();
+  fileTreeCache.set(uploadId, data.files);
+  return data.files;
+}
+
+function buildTree(files) {
+  const root = { name: "", children: {}, files: [] };
+
+  for (const f of files) {
+    const parts = f.path.split("/");
+    let node = root;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const dir = parts[i];
+      if (!node.children[dir]) {
+        node.children[dir] = { name: dir, children: {}, files: [] };
+      }
+      node = node.children[dir];
+    }
+    node.files.push({ name: parts[parts.length - 1], size: f.size, compressedSize: f.compressedSize });
+  }
+
+  return root;
+}
+
+function renderTree(node, depth) {
+  let html = "";
+
+  // Sort directories first, then files, both alphabetically
+  const dirs = Object.values(node.children).sort((a, b) => a.name.localeCompare(b.name));
+  const files = [...node.files].sort((a, b) => a.name.localeCompare(b.name));
+
+  for (const dir of dirs) {
+    const childCount = countEntries(dir);
+    html += `<li>
+      <span class="dir-toggle${depth < 1 ? " open" : ""}">${escapeHtml(dir.name)}/</span>
+      <span class="file-size">(${childCount} items)</span>
+      <ul${depth < 1 ? "" : ' style="display: none;"'}>${renderTree(dir, depth + 1)}</ul>
+    </li>`;
+  }
+
+  for (const file of files) {
+    html += `<li class="file-entry">${escapeHtml(file.name)} <span class="file-size">${formatSize(file.size)}</span></li>`;
+  }
+
+  return html;
+}
+
+function countEntries(node) {
+  let count = node.files.length;
+  for (const child of Object.values(node.children)) {
+    count += countEntries(child);
+  }
+  return count;
+}
+
+function openFileTreeModal(uploadId, filename) {
+  const modal = document.getElementById("file-tree-modal");
+  const title = document.getElementById("file-tree-title");
+  const loading = document.getElementById("file-tree-loading");
+  const error = document.getElementById("file-tree-error");
+  const content = document.getElementById("file-tree-content");
+
+  title.textContent = `Files in ${filename}`;
+  loading.style.display = "block";
+  error.style.display = "none";
+  content.innerHTML = "";
+  modal.style.display = "flex";
+
+  fetchFileTree(uploadId)
+    .then((files) => {
+      loading.style.display = "none";
+      if (!files || files.length === 0) {
+        content.innerHTML = '<p class="empty-tree">No files found in archive.</p>';
+        return;
+      }
+      const tree = buildTree(files);
+      content.innerHTML = `<ul class="file-tree">${renderTree(tree, 0)}</ul>`;
+
+      // Attach toggle listeners
+      content.addEventListener("click", (e) => {
+        if (e.target.classList.contains("dir-toggle")) {
+          e.target.classList.toggle("open");
+          const ul = e.target.parentElement.querySelector("ul");
+          if (ul) ul.style.display = ul.style.display === "none" ? "" : "none";
+        }
+      });
+    })
+    .catch((err) => {
+      loading.style.display = "none";
+      error.textContent = `Failed to load files: ${err.message}`;
+      error.style.display = "block";
+    });
+}
+
+function closeFileTreeModal() {
+  document.getElementById("file-tree-modal").style.display = "none";
+}
+
 // ─── Auto-download from ?download= param ───
 
 function handleAutoDownload(uploads) {
@@ -245,6 +434,24 @@ async function init() {
       internalEmails.add(email.toLowerCase());
       applyFilter();
     }
+
+    if (e.target.classList.contains("btn-browse")) {
+      const uploadId = e.target.dataset.uploadId;
+      const filename = e.target.dataset.filename;
+      openFileTreeModal(uploadId, filename);
+    }
+
+    const cell = e.target.closest(".notes-cell");
+    if (cell) startNotesEdit(cell);
+  });
+
+  // File tree modal: close on button, Esc, or click outside
+  document.getElementById("file-tree-close").addEventListener("click", closeFileTreeModal);
+  document.getElementById("file-tree-modal").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) closeFileTreeModal();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeFileTreeModal();
   });
 
   document.getElementById("app").style.display = "block";

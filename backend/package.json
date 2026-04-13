@@ -6,7 +6,9 @@
     "cdk": "cdk",
     "deploy": "cdk deploy",
     "synth": "cdk synth",
-    "diff": "cdk diff"
+    "diff": "cdk diff",
+    "test": "vitest run",
+    "deploy:ui": "bash deploy-ui.sh"
   },
   "dependencies": {
     "aws-cdk-lib": "^2.170.0",
@@ -23,6 +25,7 @@
     "@types/node": "^22.0.0",
     "aws-cdk": "^2.170.0",
     "esbuild": "^0.24.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.4"
   }
 }

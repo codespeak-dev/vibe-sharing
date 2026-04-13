@@ -33,7 +33,9 @@
             <th>Size</th>
             <th>Uploaded by</th>
             <th>Repo</th>
+            <th>Notes</th>
             <th>Date</th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="uploads-body"></tbody>
@@ -53,6 +55,18 @@
           <tbody id="threads-body"></tbody>
         </table>
       </div>
+    </div>
+  </div>
+
+  <div id="file-tree-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="file-tree-title">Files</h3>
+        <button id="file-tree-close" class="btn-close">&times;</button>
+      </div>
+      <div id="file-tree-loading" style="display: none;">Loading file list...</div>
+      <div id="file-tree-error" style="display: none;"></div>
+      <div id="file-tree-content"></div>
     </div>
   </div>
 
