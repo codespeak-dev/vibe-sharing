@@ -28,6 +28,8 @@ export interface DiscoveredProject {
   path: string;
   /** Agent display names that have sessions for this project */
   agents: string[];
+  /** Agent slugs, parallel to agents[] */
+  agentSlugs: string[];
   /** Agent slug → session count */
   sessionCounts: Record<string, number>;
 }

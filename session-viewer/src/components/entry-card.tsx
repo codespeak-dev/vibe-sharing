@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { JsonViewer } from "./json-viewer";
 import { MessageRenderer, hasRenderedView, getHeaderExtra, isHeaderOnly, getCollapsedPreview, getDisplayType, entryReferencesPlans, entryHasThinking, getThinkingPreview, getEntryIdeTags, type ToolUseInfo, type TodoWriteDiff, type TodoChangePart } from "./message-renderer";
 import { truncate, foldCwd, shortenPath } from "@/lib/format";
@@ -46,11 +46,10 @@ export function EntryCard({ entry, forceExpanded, projectPath, toolMap, toolResu
   const displayType = getDisplayType(entry.raw);
   const defaultExpanded = displayType === "user" || !!forceExpanded;
   const [expanded, setExpanded] = useState(defaultExpanded);
-  const [prevForceExpanded, setPrevForceExpanded] = useState(forceExpanded);
-  if (prevForceExpanded !== forceExpanded) {
-    setPrevForceExpanded(forceExpanded);
+
+  useEffect(() => {
     if (forceExpanded && !expanded) setExpanded(true);
-  }
+  }, [forceExpanded]); // eslint-disable-line react-hooks/exhaustive-deps
   const [view, setView] = useState<"rendered" | "raw">(canRender ? "rendered" : "raw");
   const entryTag = classifyTag({ type: entry.type, raw: entry.raw } as ClassifyEntry);
   const colorClass = tagColor(entryTag);

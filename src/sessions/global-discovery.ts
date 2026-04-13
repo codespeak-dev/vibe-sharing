@@ -2,7 +2,7 @@ import { ClaudeCodeProvider } from "./agents/claude.js";
 import { CodexProvider } from "./agents/codex.js";
 import { GeminiProvider } from "./agents/gemini.js";
 import { ClineProvider } from "./agents/cline.js";
-import { CursorProvider } from "./agents/cursor.js";
+import { CursorProvider, detectCursorInstalls } from "./agents/cursor.js";
 import type { AgentProvider, DiscoveredProject } from "./types.js";
 import { normalizePath, getGitWorktrees } from "../utils/paths.js";
 
@@ -12,11 +12,17 @@ export interface GlobalDiscoveryResult {
 
 /**
  * All supported agent providers, same order as discovery.ts.
+ * Creates one CursorProvider per detected Cursor installation.
  */
-function getAllProviders(): AgentProvider[] {
+async function getAllProviders(): Promise<AgentProvider[]> {
+  const cursorInstalls = await detectCursorInstalls();
+  const cursorProviders = cursorInstalls.length > 0
+    ? cursorInstalls.map((install) => new CursorProvider(install))
+    : [new CursorProvider()];
+
   return [
     new ClaudeCodeProvider(),
-    new CursorProvider(),
+    ...cursorProviders,
     new CodexProvider(),
     new GeminiProvider(),
     new ClineProvider(),
@@ -30,7 +36,7 @@ function getAllProviders(): AgentProvider[] {
 export async function discoverAllProjects(
   onProgress?: (status: string) => void,
 ): Promise<GlobalDiscoveryResult> {
-  const providers = getAllProviders();
+  const providers = await getAllProviders();
 
   onProgress?.("Detecting installed agents...");
 
@@ -59,7 +65,7 @@ export async function discoverAllProjects(
   // Merge by normalized path
   const projectMap = new Map<
     string,
-    { path: string; agents: string[]; sessionCounts: Record<string, number> }
+    { path: string; agents: string[]; agentSlugs: string[]; sessionCounts: Record<string, number> }
   >();
 
   for (const { provider, projects } of perAgent) {
@@ -72,12 +78,14 @@ export async function discoverAllProjects(
         project = {
           path: rawPath, // Keep original casing
           agents: [],
+          agentSlugs: [],
           sessionCounts: {},
         };
         projectMap.set(normalized, project);
       }
       if (!project.agents.includes(provider.name)) {
         project.agents.push(provider.name);
+        project.agentSlugs.push(provider.slug);
       }
       project.sessionCounts[provider.slug] =
         (project.sessionCounts[provider.slug] ?? 0) + count;
@@ -91,7 +99,7 @@ export async function discoverAllProjects(
   let mergeCount = 0;
   const mergedMap = new Map<
     string,
-    { path: string; agents: string[]; sessionCounts: Record<string, number> }
+    { path: string; agents: string[]; agentSlugs: string[]; sessionCounts: Record<string, number> }
   >();
 
   for (const [normalized, project] of projectMap) {
@@ -102,7 +110,7 @@ export async function discoverAllProjects(
       onProgress?.(`Merging worktrees (${mergeCount}/${projectMap.size})...`);
     }
 
-    const merged = { ...project, agents: [...project.agents], sessionCounts: { ...project.sessionCounts } };
+    const merged = { ...project, agents: [...project.agents], agentSlugs: [...project.agentSlugs], sessionCounts: { ...project.sessionCounts } };
 
     try {
       const worktrees = await getGitWorktrees(project.path);
@@ -116,8 +124,11 @@ export async function discoverAllProjects(
         if (wtNorm === normalized) continue;
         const other = projectMap.get(wtNorm);
         if (other) {
-          for (const agent of other.agents) {
-            if (!merged.agents.includes(agent)) merged.agents.push(agent);
+          for (let i = 0; i < other.agents.length; i++) {
+            if (!merged.agents.includes(other.agents[i]!)) {
+              merged.agents.push(other.agents[i]!);
+              merged.agentSlugs.push(other.agentSlugs[i]!);
+            }
           }
           for (const [slug, count] of Object.entries(other.sessionCounts)) {
             merged.sessionCounts[slug] = (merged.sessionCounts[slug] ?? 0) + count;
@@ -142,6 +153,7 @@ export async function discoverAllProjects(
     .map((p) => ({
       path: p.path,
       agents: p.agents,
+      agentSlugs: p.agentSlugs,
       sessionCounts: p.sessionCounts,
     }));
 

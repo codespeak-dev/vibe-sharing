@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { REGISTRY, type EntryTypeSpec } from "@/lib/message-type-registry";
+import type { EntryTag } from "@/lib/classify";
 import { openCache, getVisualTagCounts } from "@/lib/cache-db";
 import { RegistryRebuildButton } from "./rebuild-button";
 

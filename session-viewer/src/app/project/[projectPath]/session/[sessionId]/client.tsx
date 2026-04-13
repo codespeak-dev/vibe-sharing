@@ -9,6 +9,7 @@ import {
   topicalGroupDuration,
   type SessionEntry,
   type DisplayItem,
+  type ClassifiedEntry,
   type CollapsedGroup,
   type TopicalGroup,
   type Layer2Item,
@@ -113,14 +114,18 @@ function CollapsedGroupView({
 }) {
   const containsHighlight = highlightEntry != null && collapsedGroupContains(group, highlightEntry);
   const [expanded, setExpanded] = useState(expandAll || containsHighlight);
-  const [prevReapplyKey, setPrevReapplyKey] = useState(reapplyKey);
-  if (prevReapplyKey !== reapplyKey) {
-    setPrevReapplyKey(reapplyKey);
-    setExpanded(containsHighlight);
-  }
-  const effectiveExpanded = expanded || expandAll || containsHighlight;
+  const reapplyRef = useRef(reapplyKey);
 
-  if (!effectiveExpanded) {
+  // React to expandAll / reapply / highlight
+  useEffect(() => { if (expandAll || containsHighlight) setExpanded(true); }, [expandAll, containsHighlight]);
+  useEffect(() => {
+    if (reapplyRef.current !== reapplyKey) {
+      reapplyRef.current = reapplyKey;
+      setExpanded(containsHighlight);
+    }
+  }, [reapplyKey, containsHighlight]);
+
+  if (!expanded) {
     return (
       <button
         onClick={() => setExpanded(true)}
@@ -257,12 +262,15 @@ function ToolCallGroupView({
 }: TopicalGroupViewProps) {
   const containsHighlight = highlightEntry != null && group.entries.some((e) => e.lineIndex === highlightEntry);
   const [expanded, setExpanded] = useState(expandAll || !!autoExpand || containsHighlight);
-  const [prevReapplyKey, setPrevReapplyKey] = useState(reapplyKey);
-  if (prevReapplyKey !== reapplyKey) {
-    setPrevReapplyKey(reapplyKey);
-    setExpanded(!!autoExpand || containsHighlight);
-  }
-  const effectiveExpanded = expanded || expandAll || containsHighlight;
+  const reapplyRef = useRef(reapplyKey);
+
+  useEffect(() => { if (expandAll || containsHighlight) setExpanded(true); }, [expandAll, containsHighlight]);
+  useEffect(() => {
+    if (reapplyRef.current !== reapplyKey) {
+      reapplyRef.current = reapplyKey;
+      setExpanded(!!autoExpand || containsHighlight);
+    }
+  }, [reapplyKey, autoExpand, containsHighlight]);
 
   const primaryEntry = group.entries[0]!;
   const extraCount = group.entries.length - 1;
@@ -295,7 +303,7 @@ function ToolCallGroupView({
     return result;
   }, [group.entries]);
 
-  if (!effectiveExpanded) {
+  if (!expanded) {
     return (
       <div
         className="relative cursor-pointer"
@@ -331,7 +339,7 @@ function ToolCallGroupView({
         ▾ {group.summary}
       </button>
       <div className="space-y-2 p-2 border-t border-indigo-900/30 bg-indigo-950/15">
-        {chunks.map((chunk) =>
+        {chunks.map((chunk, ci) =>
           chunk.kind === "entry" ? (
             <EntryCard
               key={chunk.entry.lineIndex}
@@ -386,17 +394,20 @@ function InlineProgressGroup({
 }) {
   const containsHighlight = highlightEntry != null && entries.some((e) => e.lineIndex === highlightEntry);
   const [expanded, setExpanded] = useState(expandAll || containsHighlight);
-  const [prevReapplyKey, setPrevReapplyKey] = useState(reapplyKey);
-  if (prevReapplyKey !== reapplyKey) {
-    setPrevReapplyKey(reapplyKey);
-    setExpanded(containsHighlight);
-  }
-  const effectiveExpanded = expanded || expandAll || containsHighlight;
+  const reapplyRef = useRef(reapplyKey);
   const duration = useMemo(() => topicalGroupDuration(entries), [entries]);
+
+  useEffect(() => { if (expandAll || containsHighlight) setExpanded(true); }, [expandAll, containsHighlight]);
+  useEffect(() => {
+    if (reapplyRef.current !== reapplyKey) {
+      reapplyRef.current = reapplyKey;
+      setExpanded(containsHighlight);
+    }
+  }, [reapplyKey, containsHighlight]);
 
   const label = `${entries.length} progress${duration ? ` (${duration})` : ""}`;
 
-  if (!effectiveExpanded) {
+  if (!expanded) {
     return (
       <button
         onClick={() => setExpanded(true)}
@@ -442,17 +453,20 @@ function ProgressGroupView({
 }: TopicalGroupViewProps) {
   const containsHighlight = highlightEntry != null && group.entries.some((e) => e.lineIndex === highlightEntry);
   const [expanded, setExpanded] = useState(expandAll || !!autoExpand || containsHighlight);
-  const [prevReapplyKey, setPrevReapplyKey] = useState(reapplyKey);
-  if (prevReapplyKey !== reapplyKey) {
-    setPrevReapplyKey(reapplyKey);
-    setExpanded(!!autoExpand || containsHighlight);
-  }
-  const effectiveExpanded = expanded || expandAll || containsHighlight;
+  const reapplyRef = useRef(reapplyKey);
   const duration = useMemo(() => topicalGroupDuration(group.entries), [group.entries]);
+
+  useEffect(() => { if (expandAll || containsHighlight) setExpanded(true); }, [expandAll, containsHighlight]);
+  useEffect(() => {
+    if (reapplyRef.current !== reapplyKey) {
+      reapplyRef.current = reapplyKey;
+      setExpanded(!!autoExpand || containsHighlight);
+    }
+  }, [reapplyKey, autoExpand, containsHighlight]);
 
   const label = `${group.entries.length} progress${duration ? ` (${duration})` : ""}`;
 
-  if (!effectiveExpanded) {
+  if (!expanded) {
     return (
       <button
         onClick={() => setExpanded(true)}
@@ -498,14 +512,17 @@ function NoiseGroupView({
 }: TopicalGroupViewProps) {
   const containsHighlight = highlightEntry != null && group.entries.some((e) => e.lineIndex === highlightEntry);
   const [expanded, setExpanded] = useState(expandAll || !!autoExpand || containsHighlight);
-  const [prevReapplyKey, setPrevReapplyKey] = useState(reapplyKey);
-  if (prevReapplyKey !== reapplyKey) {
-    setPrevReapplyKey(reapplyKey);
-    setExpanded(!!autoExpand || containsHighlight);
-  }
-  const effectiveExpanded = expanded || expandAll || containsHighlight;
+  const reapplyRef = useRef(reapplyKey);
 
-  if (!effectiveExpanded) {
+  useEffect(() => { if (expandAll || containsHighlight) setExpanded(true); }, [expandAll, containsHighlight]);
+  useEffect(() => {
+    if (reapplyRef.current !== reapplyKey) {
+      reapplyRef.current = reapplyKey;
+      setExpanded(!!autoExpand || containsHighlight);
+    }
+  }, [reapplyKey, autoExpand, containsHighlight]);
+
+  if (!expanded) {
     return (
       <button
         onClick={() => setExpanded(true)}
@@ -550,6 +567,14 @@ function layer2Key(item: Layer2Item, index: number): string {
 }
 
 // ── Main client ────────────────────────────────────────────────────
+
+interface ApiResponse {
+  entries: SessionEntry[];
+  total: number;
+  hasMore: boolean;
+}
+
+const PAGE_SIZE = 500;
 
 export function SessionClient({
   sessionId,
