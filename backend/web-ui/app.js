@@ -323,9 +323,9 @@ function renderTree(node, depth) {
   for (const dir of dirs) {
     const childCount = countEntries(dir);
     html += `<li>
-      <span class="dir-toggle${depth < 2 ? " open" : ""}">${escapeHtml(dir.name)}/</span>
+      <span class="dir-toggle${depth < 1 ? " open" : ""}">${escapeHtml(dir.name)}/</span>
       <span class="file-size">(${childCount} items)</span>
-      <ul${depth < 2 ? "" : ' style="display: none;"'}>${renderTree(dir, depth + 1)}</ul>
+      <ul${depth < 1 ? "" : ' style="display: none;"'}>${renderTree(dir, depth + 1)}</ul>
     </li>`;
   }
 
