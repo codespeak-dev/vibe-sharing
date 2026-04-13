@@ -7,7 +7,8 @@
     "deploy": "cdk deploy",
     "synth": "cdk synth",
     "diff": "cdk diff",
-    "test": "vitest run"
+    "test": "vitest run",
+    "deploy:ui": "bash deploy-ui.sh"
   },
   "dependencies": {
     "aws-cdk-lib": "^2.170.0",
