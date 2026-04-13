@@ -191,6 +191,21 @@ export class VibeShareStack extends cdk.Stack {
       })
     );
 
+    // ─── List Files Lambda (ZIP central directory reader) ───
+    const listFilesFn = new lambdaNode.NodejsFunction(this, "ListFilesFunction", {
+      ...sharedProps,
+      entry: path.join(lambdaDir, "list-files", "index.ts"),
+      handler: "handler",
+    });
+
+    table.grant(listFilesFn, "dynamodb:GetItem");
+    listFilesFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["s3:GetObject"],
+        resources: [bucket.arnForObjects(`${UPLOAD_PREFIX}*`)],
+      })
+    );
+
     // ─── Update Upload Lambda ───
     const updateUploadFn = new lambdaNode.NodejsFunction(this, "UpdateUploadFunction", {
       ...sharedProps,
@@ -311,6 +326,16 @@ export class VibeShareStack extends cdk.Stack {
       integration: new apigatewayv2Integrations.HttpLambdaIntegration(
         "UpdateUploadIntegration",
         updateUploadFn
+      ),
+      authorizer: jwtAuthorizer,
+    });
+
+    api.addRoutes({
+      path: "/api/v1/uploads/{uploadId}/files",
+      methods: [apigatewayv2.HttpMethod.GET],
+      integration: new apigatewayv2Integrations.HttpLambdaIntegration(
+        "ListFilesIntegration",
+        listFilesFn
       ),
       authorizer: jwtAuthorizer,
     });
