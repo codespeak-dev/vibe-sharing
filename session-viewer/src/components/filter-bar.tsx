@@ -70,8 +70,6 @@ export function FilterBar({
         const ovr = filterState[tag] ?? {};
         const isPrimary = ovr.primary ?? DEFAULT_PRIMARY_TAGS.has(tag);
         const isExpanded = ovr.expanded ?? DEFAULT_EXPANDED_TAGS.has(tag);
-        const isOverridden = filterState[tag] !== undefined;
-
         const badge = TAG_BADGE[tag] ?? { active: "bg-neutral-800/50 text-neutral-400", dim: "bg-neutral-900/30 text-neutral-600" };
         const badgeClass = isPrimary ? badge.active : badge.dim;
 

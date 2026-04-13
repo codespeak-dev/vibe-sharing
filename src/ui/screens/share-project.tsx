@@ -68,9 +68,13 @@ export function ShareProjectScreen({
   const worktreePaths = new Set(worktrees.map((wt) => wt.path));
   const relatedProjects = projects.filter((p) => worktreePaths.has(p.path));
   const aggregatedAgents = new Set<string>();
+  const aggregatedSlugByAgent = new Map<string, string>();
   const aggregatedCounts: Record<string, number> = {};
   for (const rp of relatedProjects) {
-    for (const agent of rp.agents) aggregatedAgents.add(agent);
+    for (let i = 0; i < rp.agents.length; i++) {
+      aggregatedAgents.add(rp.agents[i]!);
+      aggregatedSlugByAgent.set(rp.agents[i]!, rp.agentSlugs[i]!);
+    }
     for (const [slug, count] of Object.entries(rp.sessionCounts)) {
       aggregatedCounts[slug] = (aggregatedCounts[slug] ?? 0) + count;
     }
@@ -78,6 +82,9 @@ export function ShareProjectScreen({
   // Fall back to direct match if no worktree aggregation
   const directProject = projects.find((p) => p.path === projectPath);
   const effectiveAgents = aggregatedAgents.size > 0 ? [...aggregatedAgents] : directProject?.agents ?? [];
+  const effectiveSlugByAgent = aggregatedSlugByAgent.size > 0
+    ? aggregatedSlugByAgent
+    : new Map((directProject?.agents ?? []).map((a, i) => [a, directProject!.agentSlugs[i]!]));
   const effectiveCounts = Object.keys(aggregatedCounts).length > 0 ? aggregatedCounts : directProject?.sessionCounts ?? {};
 
   const separator = "─".repeat(width);
@@ -99,11 +106,8 @@ export function ShareProjectScreen({
         <Box flexDirection="column" marginTop={1}>
           <Text bold color="yellow">Agents</Text>
           {effectiveAgents.map((agent) => {
-            const slug = Object.keys(effectiveCounts).find((s) =>
-              agent.toLowerCase().replace(/\s+/g, "-").includes(s) ||
-              s.includes(agent.toLowerCase().replace(/\s+/g, "-")),
-            );
-            const count = slug ? effectiveCounts[slug] : 0;
+            const slug = effectiveSlugByAgent.get(agent);
+            const count = slug !== undefined ? (effectiveCounts[slug] ?? 0) : 0;
             return (
               <Text key={agent}>
                 {"  "}

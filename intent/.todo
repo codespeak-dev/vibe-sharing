@@ -2,7 +2,7 @@
 [X] email validation
 [X] password recovery
 [X] update Node on the lambdas
-[X] better estimate file sizes 
+[X] better estimate file sizes
 [] better UI
 [] consent
 [] warm and polite thank you at the end
@@ -41,7 +41,7 @@
       - plan mode
       - permissions
     - number of todos completed
-    - 
+    -
 [] step-by-step analytics
 [] secret screening
 [X] support cursor

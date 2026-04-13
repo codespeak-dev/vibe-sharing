@@ -7,7 +7,6 @@ import {
   getSessionMetadata,
   setSessionMetadata,
   setEntries,
-  isSessionFresh,
 } from "./cache-db";
 import type { SessionEntry } from "../app/api/session-entries/route";
 

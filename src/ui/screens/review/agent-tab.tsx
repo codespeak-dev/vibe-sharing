@@ -39,9 +39,8 @@ export function AgentTab({ projectPath, agentSlug, active = true, onPreviewChang
         if (cancelled) return;
 
         // Find sessions for this agent
-        for (const [name, { sessions: agentSessions }] of discovery.byAgent) {
-          const slug = name.toLowerCase().replace(/\s+/g, "-");
-          if (slug === agentSlug || slug.includes(agentSlug) || agentSlug.includes(slug)) {
+        for (const [, { provider, sessions: agentSessions }] of discovery.byAgent) {
+          if (provider.slug === agentSlug) {
             setSessions(agentSessions);
             break;
           }

@@ -15,11 +15,8 @@ interface SessionsTabProps {
 export function SessionsTab({ project, active = true, onPreviewChange, onBoundary }: SessionsTabProps) {
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
 
-  const agents = project.agents.map((agent) => {
-    const slug = Object.keys(project.sessionCounts).find((s) =>
-      agent.toLowerCase().replace(/\s+/g, "-").includes(s) ||
-      s.includes(agent.toLowerCase().replace(/\s+/g, "-")),
-    ) ?? agent;
+  const agents = project.agents.map((agent, i) => {
+    const slug = project.agentSlugs[i] ?? agent;
     const count = project.sessionCounts[slug] ?? 0;
     return { name: agent, slug, count };
   });

@@ -1,6 +1,6 @@
 # codespeak-vibe-share
 
-One of the things we are working on at [CodeSpeak](https://codespeak.dev) is converting vibe coding sessions into maintainable specs. To make this tool better, we are asking people to donate their vibe coded projects (code, git history, and agent sessions). 
+One of the things we are working on at [CodeSpeak](https://codespeak.dev) is converting vibe coding sessions into maintainable specs. To make this tool better, we are asking people to donate their vibe coded projects (code, git history, and agent sessions).
 
 <img width="500" height="1106" alt="Only share your data if you want to help us build better tools, out of the goodness of your heart 💚. By sharing, you give CodeSpeak permission to study your project. CodeSpeak will NOT build commercial software that runs any of your code." src="https://github.com/user-attachments/assets/5f952dc2-7856-4cd6-b21f-8b96a5015701" />
 

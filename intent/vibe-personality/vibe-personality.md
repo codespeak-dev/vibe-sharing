@@ -123,7 +123,8 @@ Achievements/badges
 
 
 Misc
-- names: 
+- names:
   - vibe-caudit
   - Personality Vibes
   - vibe-soul
+  - vibe-check
