@@ -124,6 +124,7 @@ function renderUploads(uploads) {
       <td>${formatSize(u.sizeBytes)}</td>
       <td>${formatUser(u)}</td>
       <td>${formatRepoUrl(u.repoUrl)}</td>
+      <td class="notes-cell" data-upload-id="${escapeHtml(u.uploadId)}"><span class="notes-text">${u.notes ? escapeHtml(u.notes) : '<span class="notes-placeholder">Add note...</span>'}</span></td>
       <td>${formatDate(u.confirmedAt || u.createdAt)}</td>
     </tr>`;
     })
@@ -198,6 +199,74 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// ─── Notes inline editing ───
+
+async function updateNotes(uploadId, notes) {
+  const cfg = getConfig();
+  const token = getIdToken();
+
+  const response = await fetch(`${cfg.apiBaseUrl}/api/v1/uploads/${encodeURIComponent(uploadId)}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ notes }),
+  });
+
+  if (response.status === 401) {
+    redirectToLogin();
+    return;
+  }
+  if (!response.ok) throw new Error(`API error: ${response.status}`);
+  return response.json();
+}
+
+function startNotesEdit(cell) {
+  if (cell.querySelector("textarea")) return; // already editing
+
+  const uploadId = cell.dataset.uploadId;
+  const upload = allUploads.find((u) => u.uploadId === uploadId);
+  const currentNotes = upload?.notes || "";
+
+  const textarea = document.createElement("textarea");
+  textarea.className = "notes-input";
+  textarea.value = currentNotes;
+  textarea.maxLength = 2000;
+
+  cell.textContent = "";
+  cell.appendChild(textarea);
+  textarea.focus();
+
+  async function save() {
+    const newNotes = textarea.value.trim();
+    try {
+      await updateNotes(uploadId, newNotes);
+      if (upload) upload.notes = newNotes;
+      cell.innerHTML = newNotes
+        ? `<span class="notes-text">${escapeHtml(newNotes)}</span>`
+        : '<span class="notes-text"><span class="notes-placeholder">Add note...</span></span>';
+    } catch (err) {
+      cell.innerHTML = currentNotes
+        ? `<span class="notes-text">${escapeHtml(currentNotes)}</span>`
+        : '<span class="notes-text"><span class="notes-placeholder">Add note...</span></span>';
+      console.error("Failed to save notes:", err);
+    }
+  }
+
+  textarea.addEventListener("blur", save);
+  textarea.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      textarea.blur();
+    }
+    if (e.key === "Escape") {
+      textarea.value = currentNotes;
+      textarea.blur();
+    }
+  });
+}
+
 // ─── Auto-download from ?download= param ───
 
 function handleAutoDownload(uploads) {
@@ -245,6 +314,9 @@ async function init() {
       internalEmails.add(email.toLowerCase());
       applyFilter();
     }
+
+    const cell = e.target.closest(".notes-cell");
+    if (cell) startNotesEdit(cell);
   });
 
   document.getElementById("app").style.display = "block";

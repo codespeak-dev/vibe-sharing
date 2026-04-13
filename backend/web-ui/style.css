@@ -189,3 +189,40 @@ a.btn {
 .btn-remove:hover {
   background: #fef2f2;
 }
+
+#uploads-table {
+  table-layout: fixed;
+}
+
+#uploads-table th:nth-child(5),
+#uploads-table td:nth-child(5) {
+  width: 200px;
+}
+
+.notes-cell {
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notes-cell:hover {
+  white-space: normal;
+  word-break: break-word;
+}
+
+.notes-placeholder {
+  color: #aaa;
+  font-style: italic;
+}
+
+.notes-input {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.3rem;
+  border: 1px solid #2563eb;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  resize: vertical;
+}
