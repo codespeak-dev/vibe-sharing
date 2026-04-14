@@ -9,3 +9,4 @@ cdk.out/
 .session-viewer-cache.db
 .session-viewer-cache.db-wal
 .session-viewer-cache.db-shm
+bundles/
