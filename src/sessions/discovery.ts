@@ -3,6 +3,7 @@ import { CodexProvider } from "./agents/codex.js";
 import { GeminiProvider } from "./agents/gemini.js";
 import { ClineProvider } from "./agents/cline.js";
 import { CursorProvider } from "./agents/cursor.js";
+import { OpenCodeProvider } from "./agents/opencode.js";
 import type { AgentProvider, DiscoveredSession, ProjectContext } from "./types.js";
 
 export interface DiscoveryInput {
@@ -27,6 +28,7 @@ function getAllProviders(): AgentProvider[] {
     new CodexProvider(),
     new GeminiProvider(),
     new ClineProvider(),
+    new OpenCodeProvider(),
   ];
 }
 
