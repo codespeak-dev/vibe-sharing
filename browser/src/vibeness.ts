@@ -92,46 +92,52 @@ export async function calculateVibeness(
   const vibedFiles = new Set<string>();
   const pathPrefix = projectPath.endsWith("/") ? projectPath : projectPath + "/";
 
-  const claudeHandle = agentHandles.find((h) => h.slug === "claude");
-  if (claudeHandle) {
-    const encoded = encodeProjectPath(projectPath);
-    const projectsDir = await getDirHandle(claudeHandle.handle, "projects");
-    const sessionDir = projectsDir
-      ? await getDirHandle(projectsDir, encoded)
-      : null;
+  /** Scan a session directory (already resolved to the per-project JSONL folder). */
+  async function scanSessionDir(sessionDir: FileSystemDirectoryHandle) {
+    for await (const [fileName, fileHandle] of sessionDir.entries()) {
+      if (fileHandle.kind !== "file" || !fileName.endsWith(".jsonl")) continue;
+      const sid = fileName.slice(0, -".jsonl".length);
+      if (!sessionIds.has(sid)) continue;
 
-    if (sessionDir) {
-      for await (const [fileName, fileHandle] of sessionDir.entries()) {
-        if (fileHandle.kind !== "file" || !fileName.endsWith(".jsonl")) continue;
-        const sid = fileName.slice(0, -".jsonl".length);
-        if (!sessionIds.has(sid)) continue;
-
-        const messages = await readJsonlHandle<JsonlMessage>(
-          fileHandle as FileSystemFileHandle,
-        );
-        for (const msg of messages) {
-          const content = msg.message?.content;
-          if (!Array.isArray(content)) continue;
-          for (const block of content) {
-            if (block.type !== "tool_use") continue;
-            const tb = block as unknown as ToolUseBlock;
-            for (const key of ["file_path", "path", "new_path"] as const) {
-              const val = tb.input?.[key];
-              if (typeof val !== "string") continue;
-              // Strip absolute project-path prefix to get relative path
-              let rel: string | null = null;
-              if (val.startsWith(pathPrefix)) {
-                rel = val.slice(pathPrefix.length);
-              } else if (val.startsWith(projectPath)) {
-                rel = val.slice(projectPath.length).replace(/^\//, "");
-              }
-              if (rel && allFiles.has(rel)) {
-                vibedFiles.add(rel);
-              }
+      const messages = await readJsonlHandle<JsonlMessage>(
+        fileHandle as FileSystemFileHandle,
+      );
+      for (const msg of messages) {
+        const content = msg.message?.content;
+        if (!Array.isArray(content)) continue;
+        for (const block of content) {
+          if (block.type !== "tool_use") continue;
+          const tb = block as unknown as ToolUseBlock;
+          for (const key of ["file_path", "path", "new_path"] as const) {
+            const val = tb.input?.[key];
+            if (typeof val !== "string") continue;
+            // Strip absolute project-path prefix to get relative path
+            let rel: string | null = null;
+            if (val.startsWith(pathPrefix)) {
+              rel = val.slice(pathPrefix.length);
+            } else if (val.startsWith(projectPath)) {
+              rel = val.slice(projectPath.length).replace(/^\//, "");
+            }
+            if (rel && allFiles.has(rel)) {
+              vibedFiles.add(rel);
             }
           }
         }
       }
+    }
+  }
+
+  for (const ah of agentHandles) {
+    if (ah.slug === "claude") {
+      const encoded = encodeProjectPath(projectPath);
+      const projectsDir = await getDirHandle(ah.handle, "projects");
+      const sessionDir = projectsDir
+        ? await getDirHandle(projectsDir, encoded)
+        : null;
+      if (sessionDir) await scanSessionDir(sessionDir);
+    } else if (ah.slug === "claude-project") {
+      // Handle IS the session directory already
+      await scanSessionDir(ah.handle);
     }
   }
 
