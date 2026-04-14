@@ -503,3 +503,11 @@ a.btn {
   font-size: 0.75rem;
   margin-left: 0.4rem;
 }
+
+.session-stats {
+  color: #666;
+  font-size: 0.82rem;
+  margin-bottom: 0.6rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid #eee;
+}

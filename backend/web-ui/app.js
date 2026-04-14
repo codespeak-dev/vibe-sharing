@@ -588,6 +588,39 @@ function countEntries(node) {
   return count;
 }
 
+function estimateSessions(files) {
+  const claudeSessions = new Set();
+  const codexSessions = new Set();
+  const geminiSessions = new Set();
+  const clineSessions = new Set();
+
+  for (const f of files) {
+    const p = f.path;
+
+    const claudeMatch = p.match(/^sessions\/\.claude\/projects\/[^/]+\/([^/]+)\.jsonl$/);
+    if (claudeMatch && !claudeMatch[1].startsWith("agent-")) { claudeSessions.add(claudeMatch[1]); continue; }
+
+    const codexMatch = p.match(/^sessions\/\.codex\/.*\/(rollout-[^/]+\.jsonl?)$/);
+    if (codexMatch) { codexSessions.add(codexMatch[1]); continue; }
+
+    const geminiNewMatch = p.match(/^sessions\/\.gemini\/tmp\/[^/]+\/chats\/(session-[^/]+\.json)$/);
+    if (geminiNewMatch) { geminiSessions.add(geminiNewMatch[1]); continue; }
+
+    const geminiOldMatch = p.match(/^sessions\/\.gemini\/antigravity\/conversations\/([^/]+\.pb)$/);
+    if (geminiOldMatch) { geminiSessions.add(geminiOldMatch[1]); continue; }
+
+    const clineMatch = p.match(/^sessions\/\.cline\/data\/tasks\/([^/]+)\//);
+    if (clineMatch) { clineSessions.add(clineMatch[1]); continue; }
+  }
+
+  const results = [];
+  if (claudeSessions.size) results.push({ agent: "Claude Code", count: claudeSessions.size });
+  if (codexSessions.size) results.push({ agent: "Codex", count: codexSessions.size });
+  if (geminiSessions.size) results.push({ agent: "Gemini CLI", count: geminiSessions.size });
+  if (clineSessions.size) results.push({ agent: "Cline", count: clineSessions.size });
+  return results;
+}
+
 function openFileTreeModal(uploadId, filename) {
   const modal = document.getElementById("file-tree-modal");
   const title = document.getElementById("file-tree-title");
@@ -609,16 +642,11 @@ function openFileTreeModal(uploadId, filename) {
         return;
       }
       const tree = buildTree(files);
-      content.innerHTML = `<ul class="file-tree">${renderTree(tree, 0)}</ul>`;
-
-      // Attach toggle listeners
-      content.addEventListener("click", (e) => {
-        if (e.target.classList.contains("dir-toggle")) {
-          e.target.classList.toggle("open");
-          const ul = e.target.parentElement.querySelector("ul");
-          if (ul) ul.style.display = ul.style.display === "none" ? "" : "none";
-        }
-      });
+      const sessions = estimateSessions(files);
+      const statsHtml = sessions.length > 0
+        ? `<div class="session-stats">${sessions.map((s) => `~${s.count} session${s.count !== 1 ? "s" : ""} (${escapeHtml(s.agent)})`).join(" &middot; ")}</div>`
+        : "";
+      content.innerHTML = `${statsHtml}<ul class="file-tree">${renderTree(tree, 0)}</ul>`;
     })
     .catch((err) => {
       loading.style.display = "none";
@@ -630,6 +658,15 @@ function openFileTreeModal(uploadId, filename) {
 function closeFileTreeModal() {
   document.getElementById("file-tree-modal").style.display = "none";
 }
+
+// Attach dir-toggle listener once via event delegation
+document.getElementById("file-tree-content").addEventListener("click", (e) => {
+  if (e.target.classList.contains("dir-toggle")) {
+    e.target.classList.toggle("open");
+    const ul = e.target.parentElement.querySelector("ul");
+    if (ul) ul.style.display = ul.style.display === "none" ? "" : "none";
+  }
+});
 
 // ─── Auto-download from ?download= param ───
 
