@@ -42,11 +42,14 @@ function extractCwdFromText(text: string): string | null {
 /**
  * Parse a single JSONL session file and return a DiscoveredSession if it
  * belongs to projectPath, or null otherwise.
+ * When skipCwdCheck is true the cwd-match check is skipped (used when the
+ * caller already knows the directory only contains sessions for this project).
  */
 async function parseSessionFile(
   fileName: string,
   fileHandle: FileSystemFileHandle,
   projectPath: string,
+  skipCwdCheck = false,
 ): Promise<DiscoveredSession | null> {
   const sessionId = fileName.slice(0, -".jsonl".length);
   let summary: string | null = null;
@@ -54,7 +57,7 @@ async function parseSessionFile(
   let messageCount = 0;
   let created: string | null = null;
   let modified: string | null = null;
-  let belongsToProject = false;
+  let belongsToProject = skipCwdCheck;
 
   try {
     const messages = await readJsonlHandle<ClaudeMessage>(fileHandle);
@@ -210,12 +213,13 @@ export async function discoverClaudeProjectFromDir(
 /**
  * Find all Claude sessions for a project from a single project session dir.
  * projectDir: a directory containing .jsonl session files directly.
+ * Sessions in this directory already belong to the project — skip the cwd check.
  */
 export async function findClaudeSessionsFromDir(
   projectDir: FileSystemDirectoryHandle,
   projectPath: string,
 ): Promise<DiscoveredSession[]> {
-  return readSessionsFromDir(projectDir, projectPath);
+  return readSessionsFromDir(projectDir, projectPath, true);
 }
 
 /**
@@ -246,6 +250,8 @@ export async function getClaudeSessionFilesFromDir(
 async function readSessionsFromDir(
   sessionDir: FileSystemDirectoryHandle,
   projectPath: string,
+  /** When true, include every session in the dir without requiring a cwd match. */
+  skipCwdCheck = false,
 ): Promise<DiscoveredSession[]> {
   const sessions: DiscoveredSession[] = [];
 
@@ -256,6 +262,7 @@ async function readSessionsFromDir(
         fileName,
         fileHandle as FileSystemFileHandle,
         projectPath,
+        skipCwdCheck,
       );
       if (session) sessions.push(session);
     } catch {
