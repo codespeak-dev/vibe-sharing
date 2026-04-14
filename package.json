@@ -18,6 +18,7 @@
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
+    "inspect-bundles": "tsx scripts/inspect-bundles.ts",
     "prepublishOnly": "tsc"
   },
   "keywords": [
@@ -44,9 +45,11 @@
     "react": "^19.2.4"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
     "@types/archiver": "^6.0.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.14",
+    "adm-zip": "^0.5.17",
     "tsx": "^4.0.0",
     "typescript": "^5.7.0"
   }
