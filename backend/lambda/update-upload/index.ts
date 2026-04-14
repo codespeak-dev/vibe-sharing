@@ -47,6 +47,17 @@ export async function handler(
       }
     }
 
+    // Boolean fields
+    if ("unusable" in body) {
+      names["#unusable"] = "unusable";
+      if (body.unusable) {
+        setExprs.push("#unusable = :unusable");
+        values[":unusable"] = true as any;
+      } else {
+        removeExprs.push("#unusable");
+      }
+    }
+
     if (setExprs.length === 0 && removeExprs.length === 0) {
       return badRequest("No valid fields to update");
     }

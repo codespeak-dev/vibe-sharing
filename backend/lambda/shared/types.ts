@@ -12,4 +12,5 @@ export interface UploadRecord {
   userName?: string;
   repoUrl?: string;
   notes?: string;
+  unusable?: boolean;
 }

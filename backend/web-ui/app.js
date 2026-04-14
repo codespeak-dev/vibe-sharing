@@ -119,15 +119,16 @@ function renderUploads(uploads) {
     .map((u) => {
       const isInternal =
         u.userEmail && internalEmails.has(u.userEmail.toLowerCase());
+      const classes = [isInternal && "internal-row", u.unusable && "unusable-row"].filter(Boolean).join(" ");
       return `
-    <tr data-upload-id="${escapeHtml(u.uploadId)}"${isInternal ? ' class="internal-row"' : ""}>
+    <tr data-upload-id="${escapeHtml(u.uploadId)}"${classes ? ` class="${classes}"` : ""}>
       <td>${isInternal ? "\u{1F6E0}\uFE0F " : ""}<a href="${escapeHtml(u.downloadUrl)}" class="download-link">${escapeHtml(u.filename)}</a></td>
       <td>${formatSize(u.sizeBytes)}</td>
       <td class="editable-cell" data-upload-id="${escapeHtml(u.uploadId)}" data-fields="userName,userEmail">${formatUserEditable(u)}</td>
       <td class="editable-cell" data-upload-id="${escapeHtml(u.uploadId)}" data-fields="repoUrl">${formatRepoEditable(u.repoUrl)}</td>
       <td class="notes-cell" data-upload-id="${escapeHtml(u.uploadId)}"><span class="notes-text">${u.notes ? escapeHtml(u.notes) : '<span class="notes-placeholder">Add note...</span>'}</span></td>
       <td>${formatDate(u.confirmedAt || u.createdAt)}</td>
-      <td><button class="btn-browse" data-upload-id="${escapeHtml(u.uploadId)}" data-filename="${escapeHtml(u.filename)}">Browse</button></td>
+      <td><button class="btn-browse" data-upload-id="${escapeHtml(u.uploadId)}" data-filename="${escapeHtml(u.filename)}">Browse</button> <button class="btn-unusable" data-upload-id="${escapeHtml(u.uploadId)}">${u.unusable ? "Usable" : "Unusable"}</button></td>
     </tr>`;
     })
     .join("");
@@ -697,6 +698,23 @@ async function init() {
       const uploadId = e.target.dataset.uploadId;
       const filename = e.target.dataset.filename;
       openFileTreeModal(uploadId, filename);
+    }
+
+    if (e.target.classList.contains("btn-unusable")) {
+      const uploadId = e.target.dataset.uploadId;
+      const upload = allUploads.find((u) => u.uploadId === uploadId);
+      if (!upload) return;
+      const newVal = !upload.unusable;
+      e.target.disabled = true;
+      try {
+        await patchUpload(uploadId, { unusable: newVal });
+        pushUndo(uploadId, { unusable: upload.unusable || false });
+        upload.unusable = newVal;
+        applyFilter();
+      } catch (err) {
+        console.error("Failed to toggle unusable:", err);
+        e.target.disabled = false;
+      }
     }
 
     const cell = e.target.closest(".notes-cell");

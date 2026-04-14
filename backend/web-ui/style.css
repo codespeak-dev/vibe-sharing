@@ -86,6 +86,25 @@ tr.internal-row:hover {
   background: #e8e8e8;
 }
 
+tr.unusable-row {
+  color: #aaa;
+  text-decoration: line-through;
+}
+
+tr.unusable-row a {
+  color: #aaa;
+  text-decoration: line-through;
+}
+
+tr.unusable-row button {
+  text-decoration: none;
+}
+
+tr.unusable-row .editable-placeholder,
+tr.unusable-row .notes-placeholder {
+  color: #ccc;
+}
+
 .download-link {
   color: #2563eb;
   text-decoration: none;
@@ -336,6 +355,22 @@ a.btn {
 }
 
 .btn-browse:hover {
+  background: #e0e0e0;
+  color: #333;
+}
+
+.btn-unusable {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid #ccc;
+  background: #f5f5f5;
+  border-radius: 3px;
+  cursor: pointer;
+  color: #666;
+  white-space: nowrap;
+}
+
+.btn-unusable:hover {
   background: #e0e0e0;
   color: #333;
 }
