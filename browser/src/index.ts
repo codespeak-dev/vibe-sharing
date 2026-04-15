@@ -1,8 +1,9 @@
 /**
  * @codespeak/vibe-sharing-browser — public API.
  */
-export type { DiscoveredSession, DiscoveredProject, AgentHandle } from "./types.js";
+export type { DiscoveredSession, DiscoveredProject, AgentHandle, ExternalWorktreeHandle } from "./types.js";
 export type { VibenessResult } from "./vibeness.js";
+export { detectExternalWorktrees } from "./vibeness.js";
 export type { UploadMetadata, UploadResult } from "./upload.js";
 export type { GitMetadata } from "./git.js";
 export { initSqlite } from "./sqlite.js";
