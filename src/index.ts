@@ -10,13 +10,18 @@ program
     "Share your vibe-coded project and AI coding sessions with Codespeak",
   )
   .version(TOOL_VERSION)
+  .option("--browser", "Open browser UI (auto-detects project at cwd)")
   .option("--project", "Use legacy linear flow (detect project at cwd)")
   .option("--dry-run", "Show what would be included without creating archive")
   .option("--no-sessions", "Exclude AI coding sessions")
   .option("--output <path>", "Save zip locally instead of uploading")
   .option("--verbose", "Show detailed progress")
   .action(async (options) => {
-    if (options.project) {
+    if (options.browser) {
+      // Browser UI mode: start local server + open browser
+      const { startBrowserUI } = await import("./server/browser-ui.js");
+      await startBrowserUI();
+    } else if (options.project) {
       // Legacy flow: existing linear CLI
       await run(options);
     } else {
@@ -25,9 +30,6 @@ program
       const { discoverAllProjects } = await import(
         "./sessions/global-discovery.js"
       );
-      const { determineRoute } = await import("./routing.js");
-
-      const cwd = process.cwd();
 
       startApp({
         projects: [],
