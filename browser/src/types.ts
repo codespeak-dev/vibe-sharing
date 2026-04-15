@@ -21,6 +21,13 @@ export interface DiscoveredProject {
   sessionCounts: Record<string, number>;
 }
 
+/** A user-provided handle for a git worktree located outside the main project directory. */
+export interface ExternalWorktreeHandle {
+  /** Absolute path of the worktree root as read from .git/worktrees/{name}/gitdir. */
+  absPath: string;
+  handle: FileSystemDirectoryHandle;
+}
+
 /** A directory handle granted by the user for a particular agent. */
 export interface AgentHandle {
   slug: "claude" | "claude-project" | "cursor" | "cursor-work-profile" | "codex";

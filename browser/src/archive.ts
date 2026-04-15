@@ -4,7 +4,7 @@
  */
 import JSZip from "jszip";
 import ignore from "ignore";
-import type { AgentHandle, DiscoveredSession } from "./types.js";
+import type { AgentHandle, DiscoveredSession, ExternalWorktreeHandle } from "./types.js";
 import { walkDir, readBuffer, readText, getFileHandle } from "./fs.js";
 import { getClaudeSessionFiles, getClaudeSessionFilesFromDir } from "./providers/claude.js";
 import { getCursorSessionFiles } from "./providers/cursor.js";
@@ -43,10 +43,11 @@ export async function createBundle(options: {
   sessions: DiscoveredSession[];
   selectedSessionIds: Set<string>;
   agentHandles: AgentHandle[];
+  externalWorktrees?: ExternalWorktreeHandle[];
   metadata?: Record<string, unknown>;
   onProgress?: (phase: "project" | "sessions" | "finalizing", pct: number) => void;
 }): Promise<Blob> {
-  const { projectHandle, projectPath, sessions, selectedSessionIds, agentHandles, metadata, onProgress } = options;
+  const { projectHandle, projectPath, sessions, selectedSessionIds, agentHandles, externalWorktrees = [], metadata, onProgress } = options;
   const zip = new JSZip();
 
   // --- Read .gitignore ---
@@ -78,6 +79,23 @@ export async function createBundle(options: {
     if (excluded) continue;
     if (ig.ignores(path)) continue;
     projectFiles.push({ path, handle });
+  }
+
+  // Walk external worktrees and include their files alongside the main project
+  // (same relative layout — new worktree-only files get included, existing ones
+  // are overwritten by the worktree version which may be more recent)
+  for (const ewt of externalWorktrees) {
+    for await (const { path, handle } of walkDir(ewt.handle)) {
+      const segments = path.split("/");
+      let excluded = false;
+      for (let i = 0; i < segments.length; i++) {
+        const partial = segments.slice(0, i + 1).join("/");
+        const isDir = i < segments.length - 1;
+        if (shouldExcludeByDefault(partial, isDir)) { excluded = true; break; }
+      }
+      if (excluded || ig.ignores(path)) continue;
+      projectFiles.push({ path, handle });
+    }
   }
 
   let done = 0;
