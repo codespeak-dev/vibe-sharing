@@ -10,6 +10,20 @@ import { getClaudeSessionFiles, getClaudeSessionFilesFromDir } from "./providers
 import { getCursorSessionFiles } from "./providers/cursor.js";
 import { getCodexSessionFiles } from "./providers/codex.js";
 
+/** Default max total size of project files included in the bundle (100 MB). */
+const DEFAULT_SIZE_THRESHOLD = 100 * 1024 * 1024;
+
+export interface SkippedFile {
+  path: string;
+  sizeBytes: number;
+}
+
+export interface BundleResult {
+  blob: Blob;
+  /** Files excluded from the bundle because they exceeded the size threshold. */
+  skippedFiles: SkippedFile[];
+}
+
 const EXCLUDED_DIRS = new Set([
   "node_modules", ".venv", "venv", "__pycache__", ".hg", ".svn",
   "dist", "build", "out", ".next", ".nuxt", ".output", ".cache",
@@ -32,8 +46,81 @@ function shouldExcludeByDefault(relPath: string, isDir: boolean): boolean {
 }
 
 /**
+ * Collect project files from the main directory and external worktrees,
+ * filtering by exclusion rules and .gitignore.
+ * Files are sorted by size ascending; those that fit within thresholdBytes
+ * are included, the rest are returned as skipped.
+ */
+async function partitionProjectFiles(
+  projectHandle: FileSystemDirectoryHandle,
+  ig: ReturnType<typeof ignore>,
+  externalWorktrees: ExternalWorktreeHandle[],
+  thresholdBytes: number,
+): Promise<{
+  included: Array<{ path: string; handle: FileSystemFileHandle; sizeBytes: number }>;
+  skipped: SkippedFile[];
+}> {
+  const all: Array<{ path: string; handle: FileSystemFileHandle; sizeBytes: number }> = [];
+
+  async function collectFrom(dirHandle: FileSystemDirectoryHandle) {
+    for await (const { path, handle } of walkDir(dirHandle)) {
+      const segments = path.split("/");
+      let excluded = false;
+      for (let i = 0; i < segments.length; i++) {
+        const partial = segments.slice(0, i + 1).join("/");
+        const isDir = i < segments.length - 1;
+        if (shouldExcludeByDefault(partial, isDir)) { excluded = true; break; }
+      }
+      if (excluded || ig.ignores(path)) continue;
+      const sizeBytes = (await handle.getFile()).size;
+      all.push({ path, handle, sizeBytes });
+    }
+  }
+
+  await collectFrom(projectHandle);
+  // Walk external worktrees and include their files alongside the main project
+  // (same relative layout — new worktree-only files get included, existing ones
+  // are overwritten by the worktree version which may be more recent)
+  for (const ewt of externalWorktrees) await collectFrom(ewt.handle);
+
+  // Sort smallest-first so we maximise the number of files included
+  all.sort((a, b) => a.sizeBytes - b.sizeBytes);
+
+  let total = 0;
+  const included: Array<{ path: string; handle: FileSystemFileHandle; sizeBytes: number }> = [];
+  const skipped: SkippedFile[] = [];
+  for (const f of all) {
+    if (total + f.sizeBytes <= thresholdBytes) {
+      included.push(f);
+      total += f.sizeBytes;
+    } else {
+      skipped.push({ path: f.path, sizeBytes: f.sizeBytes });
+    }
+  }
+  return { included, skipped };
+}
+
+/**
+ * Scan the project directory and return files that would be excluded from a bundle
+ * due to the size threshold. Useful for showing a warning before bundling.
+ */
+export async function detectOversizedFiles(
+  projectHandle: FileSystemDirectoryHandle,
+  externalWorktrees: ExternalWorktreeHandle[] = [],
+  thresholdBytes = DEFAULT_SIZE_THRESHOLD,
+): Promise<SkippedFile[]> {
+  const ig = ignore();
+  const gitignoreHandle = await getFileHandle(projectHandle, ".gitignore");
+  if (gitignoreHandle) {
+    try { ig.add(await readText(gitignoreHandle)); } catch { /* ok */ }
+  }
+  const { skipped } = await partitionProjectFiles(projectHandle, ig, externalWorktrees, thresholdBytes);
+  return skipped;
+}
+
+/**
  * Create a zip bundle Blob containing:
- *   - project/  : all non-gitignored project files
+ *   - project/  : all non-gitignored project files (up to sizeThresholdBytes total)
  *   - sessions/ : session files for the selected sessions
  *   - manifest.json
  */
@@ -45,9 +132,14 @@ export async function createBundle(options: {
   agentHandles: AgentHandle[];
   externalWorktrees?: ExternalWorktreeHandle[];
   metadata?: Record<string, unknown>;
+  /** Max cumulative size of project files to include (default 100 MB). */
+  sizeThresholdBytes?: number;
   onProgress?: (phase: "project" | "sessions" | "finalizing", pct: number) => void;
-}): Promise<Blob> {
-  const { projectHandle, projectPath, sessions, selectedSessionIds, agentHandles, externalWorktrees = [], metadata, onProgress } = options;
+}): Promise<BundleResult> {
+  const {
+    projectHandle, projectPath, sessions, selectedSessionIds, agentHandles,
+    externalWorktrees = [], metadata, sizeThresholdBytes = DEFAULT_SIZE_THRESHOLD, onProgress,
+  } = options;
   const zip = new JSZip();
 
   // --- Read .gitignore ---
@@ -62,41 +154,10 @@ export async function createBundle(options: {
     }
   }
 
-  // --- Walk project directory ---
-  const projectFiles: Array<{ path: string; handle: FileSystemFileHandle }> = [];
-  for await (const { path, handle } of walkDir(projectHandle)) {
-    const segments = path.split("/");
-    // Check each path component against defaults
-    let excluded = false;
-    for (let i = 0; i < segments.length; i++) {
-      const partial = segments.slice(0, i + 1).join("/");
-      const isDir = i < segments.length - 1;
-      if (shouldExcludeByDefault(partial, isDir)) {
-        excluded = true;
-        break;
-      }
-    }
-    if (excluded) continue;
-    if (ig.ignores(path)) continue;
-    projectFiles.push({ path, handle });
-  }
-
-  // Walk external worktrees and include their files alongside the main project
-  // (same relative layout — new worktree-only files get included, existing ones
-  // are overwritten by the worktree version which may be more recent)
-  for (const ewt of externalWorktrees) {
-    for await (const { path, handle } of walkDir(ewt.handle)) {
-      const segments = path.split("/");
-      let excluded = false;
-      for (let i = 0; i < segments.length; i++) {
-        const partial = segments.slice(0, i + 1).join("/");
-        const isDir = i < segments.length - 1;
-        if (shouldExcludeByDefault(partial, isDir)) { excluded = true; break; }
-      }
-      if (excluded || ig.ignores(path)) continue;
-      projectFiles.push({ path, handle });
-    }
-  }
+  // --- Collect and partition project files by size ---
+  const { included: projectFiles, skipped: skippedFiles } = await partitionProjectFiles(
+    projectHandle, ig, externalWorktrees, sizeThresholdBytes,
+  );
 
   let done = 0;
   for (const { path, handle } of projectFiles) {
@@ -179,11 +240,13 @@ export async function createBundle(options: {
     })),
     projectFilesCount: projectFiles.length,
     sessionFilesCount: sessionFiles.length,
+    ...(skippedFiles.length > 0 ? { skippedFiles } : {}),
   };
   zip.file("manifest.json", JSON.stringify(manifest, null, 2));
 
   onProgress?.("finalizing", 0);
-  return zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+  const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+  return { blob, skippedFiles };
 }
 
 /** Trigger a browser download of the bundle Blob. */
@@ -191,7 +254,7 @@ export function downloadBundle(blob: Blob, projectName: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${projectName}-sessions-${Date.now()}.zip`;
+  a.download = `${projectName}-${Date.now()}.zip`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
