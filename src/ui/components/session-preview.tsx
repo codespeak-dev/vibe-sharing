@@ -5,7 +5,7 @@ import { Spinner } from "./spinner.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { CLAUDE_PROJECTS_DIR, GEMINI_TMP_DIR } from "../../config.js";
+import { CLAUDE_PROJECTS_DIR, GEMINI_TMP_DIR, CURSOR_PROJECTS_DIR } from "../../config.js";
 import { encodeProjectPath } from "../../utils/paths.js";
 import { safeReadJson } from "../../utils/fs-helpers.js";
 
@@ -151,6 +151,50 @@ async function readGeminiSession(sessionId: string, projectPath: string): Promis
 }
 
 /**
+ * Read a Cursor agent transcript file and extract messages.
+ * Transcripts live at ~/.cursor/projects/<slug>/agent-transcripts/<sessionId>.txt
+ * Format: lines "user:" or "assistant:" mark role boundaries; everything after is content.
+ */
+async function readCursorSession(sessionId: string, projectPath: string): Promise<Message[]> {
+  const slug = projectPath.replace(/\\/g, "/").replace(/^\//g, "").replace(/\//g, "-");
+  const transcriptPath = path.join(CURSOR_PROJECTS_DIR, slug, "agent-transcripts", `${sessionId}.txt`);
+
+  let content: string;
+  try {
+    content = await fs.readFile(transcriptPath, "utf-8");
+  } catch {
+    return [];
+  }
+
+  const messages: Message[] = [];
+  let currentRole: "user" | "assistant" | null = null;
+  const currentLines: string[] = [];
+
+  const flush = () => {
+    if (currentRole && currentLines.length > 0) {
+      const text = currentLines.join("\n").trim();
+      if (text) messages.push({ role: currentRole, text });
+    }
+    currentLines.length = 0;
+  };
+
+  for (const line of content.split("\n")) {
+    if (line === "user:") {
+      flush();
+      currentRole = "user";
+    } else if (line === "assistant:") {
+      flush();
+      currentRole = "assistant";
+    } else if (currentRole) {
+      currentLines.push(line);
+    }
+  }
+  flush();
+
+  return messages;
+}
+
+/**
  * Generic fallback: try to read the session as JSONL (Claude/Codex style).
  */
 async function readGenericSession(sessionId: string, projectPath: string): Promise<Message[]> {
@@ -181,6 +225,8 @@ export function SessionPreview({
         msgs = await readClaudeSession(sessionId, projectPath);
       } else if (agentSlug.includes("gemini")) {
         msgs = await readGeminiSession(sessionId, projectPath);
+      } else if (agentSlug.includes("cursor")) {
+        msgs = await readCursorSession(sessionId, projectPath);
       } else {
         msgs = await readGenericSession(sessionId, projectPath);
       }

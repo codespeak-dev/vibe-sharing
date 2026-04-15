@@ -48,12 +48,9 @@ export function ProjectListScreen({
     const isShared = sharedPaths.has(p.path);
     const isCurrent = p.path === currentProjectPath;
     const agents = p.agents
-      .map((a) => {
-        const agentSlug = a.toLowerCase().replace(/\s+/g, "-");
-        const slug = Object.keys(p.sessionCounts).find(
-          (s) => agentSlug.includes(s) || s.includes(agentSlug),
-        );
-        const count = slug ? p.sessionCounts[slug] : 0;
+      .map((a, i) => {
+        const slug = p.agentSlugs[i];
+        const count = slug !== undefined ? (p.sessionCounts[slug] ?? 0) : 0;
         return `${a} (${count})`;
       })
       .join("  ");

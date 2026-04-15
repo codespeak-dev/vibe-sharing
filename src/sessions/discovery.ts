@@ -2,7 +2,7 @@ import { ClaudeCodeProvider } from "./agents/claude.js";
 import { CodexProvider } from "./agents/codex.js";
 import { GeminiProvider } from "./agents/gemini.js";
 import { ClineProvider } from "./agents/cline.js";
-import { CursorProvider } from "./agents/cursor.js";
+import { CursorProvider, detectCursorInstalls } from "./agents/cursor.js";
 import type { AgentProvider, DiscoveredSession, ProjectContext } from "./types.js";
 
 export interface DiscoveryInput {
@@ -19,11 +19,17 @@ export interface DiscoveryResult {
 
 /**
  * All supported agent providers, in order of popularity/likelihood.
+ * Creates one CursorProvider per detected Cursor installation.
  */
-function getAllProviders(): AgentProvider[] {
+async function getAllProviders(): Promise<AgentProvider[]> {
+  const cursorInstalls = await detectCursorInstalls();
+  const cursorProviders = cursorInstalls.length > 0
+    ? cursorInstalls.map((install) => new CursorProvider(install))
+    : [new CursorProvider()];
+
   return [
     new ClaudeCodeProvider(),
-    new CursorProvider(),
+    ...cursorProviders,
     new CodexProvider(),
     new GeminiProvider(),
     new ClineProvider(),
@@ -38,7 +44,7 @@ function getAllProviders(): AgentProvider[] {
 export async function discoverAllSessions(
   input: DiscoveryInput,
 ): Promise<DiscoveryResult> {
-  const providers = getAllProviders();
+  const providers = await getAllProviders();
 
   // Detect which agents are installed, in parallel
   const detections = await Promise.all(
@@ -76,6 +82,19 @@ export async function discoverAllSessions(
       return { provider: p, sessions: merged };
     }),
   );
+
+  // Deduplicate sessions across all Cursor providers by session ID.
+  // Both the standard and work-profile providers scan the shared ~/.cursor/chats/
+  // directory, so the same session can appear under multiple providers.
+  const cursorSeenIds = new Set<string>();
+  for (const result of results) {
+    if (!result.provider.slug.startsWith("cursor")) continue;
+    result.sessions = result.sessions.filter((s) => {
+      if (cursorSeenIds.has(s.sessionId)) return false;
+      cursorSeenIds.add(s.sessionId);
+      return true;
+    });
+  }
 
   const byAgent = new Map<
     string,

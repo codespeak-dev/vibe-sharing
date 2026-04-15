@@ -62,4 +62,3 @@ Change command to codespeak-vibe-share
 
 - if no .claude or sessions not found, ask the user what agent they used, and locate its sessions instead
 - support sessions from different agents better
-

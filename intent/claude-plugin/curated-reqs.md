@@ -31,7 +31,7 @@ Can we scan the sessions for secrets?
 
 It's suspicious that I'm not seeing any subagent sessions. are you actually bundling up the entire .claude/project/<...> folder? I think you aren't and this is not what I asked you to do
 
-Also, let's make sure we copy all the plans from .claude/plans that are mentioned ANYWHERE in the sessions for this project (including subagents). 
+Also, let's make sure we copy all the plans from .claude/plans that are mentioned ANYWHERE in the sessions for this project (including subagents).
 
 Can we also pick up the debug sessions?
 

@@ -56,9 +56,116 @@ interface DiscoveredPlan {
   referencedInStoreDb?: string;
 }
 
+export interface CursorInstallConfig {
+  workspaceStorageDir: string;
+  globalStateDb: string;
+  /** Display name suffix, e.g. "Brixy" for Cursor-Brixy. null for the main install. */
+  nameSuffix: string | null;
+}
+
+/**
+ * Detect all Cursor installations by scanning the filesystem.
+ *
+ * Two locations are checked:
+ *
+ * 1. Platform app support dir (e.g. ~/Library/Application Support/Cursor*) — catches
+ *    standard installs and named variants like Cursor-Brixy that live there.
+ *
+ * 2. Home directory top-level — catches installs launched with a custom
+ *    --user-data-dir pointing to a home-dir folder whose name contains "cursor"
+ *    (e.g. ~/cursor-work-profile).  Only directories that have the expected
+ *    User/workspaceStorage structure are included, to avoid false positives.
+ */
+export async function detectCursorInstalls(): Promise<CursorInstallConfig[]> {
+  const home = os.homedir();
+  const seen = new Map<string, CursorInstallConfig>(); // keyed by workspaceStorageDir
+
+  // --- Location 1: platform app support dir ---
+  const appSupportDir =
+    process.platform === "darwin"
+      ? path.join(home, "Library", "Application Support")
+      : process.platform === "win32"
+        ? path.join(
+            process.env.APPDATA ?? path.join(home, "AppData", "Roaming"),
+          )
+        : path.join(home, ".config");
+
+  await addInstallsFromDir(appSupportDir, seen, (name) => {
+    if (!name.startsWith("Cursor")) return null; // skip non-Cursor
+    const suffix = name.replace(/^Cursor-?/, "");
+    return { include: true, nameSuffix: suffix || null };
+  });
+
+  // --- Location 2: home directory top-level ---
+  await addInstallsFromDir(home, seen, (name) => {
+    // Only include dirs whose name contains "cursor" (case-insensitive)
+    if (!name.toLowerCase().includes("cursor")) return null;
+    // Strip any "cursor" prefix/component to derive a suffix, e.g.
+    // "cursor-work-profile" → "work-profile", ".cursor-brixy" → "brixy"
+    const stripped = name.replace(/^\.?cursor-?/i, "");
+    return { include: true, nameSuffix: stripped || null };
+  });
+
+  return [...seen.values()];
+}
+
+/**
+ * Scan one directory level of `baseDir`, calling `classify` on each entry name.
+ * Returns `{ include: true, nameSuffix }` to add the entry as a Cursor install,
+ * or `null` to skip it.
+ * Adds valid installs to `seen` (keyed by workspaceStorageDir to deduplicate).
+ */
+async function addInstallsFromDir(
+  baseDir: string,
+  seen: Map<string, CursorInstallConfig>,
+  classify: (name: string) => { include: boolean; nameSuffix: string | null } | null,
+): Promise<void> {
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await fs.readdir(baseDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+
+    const result = classify(entry.name);
+    if (!result?.include) continue;
+
+    const appDataDir = path.join(baseDir, entry.name);
+    const workspaceStorageDir = path.join(appDataDir, "User", "workspaceStorage");
+    const globalStateDb = path.join(appDataDir, "User", "globalStorage", "state.vscdb");
+
+    if (seen.has(workspaceStorageDir)) continue;
+    if (!(await directoryExists(workspaceStorageDir))) continue;
+
+    seen.set(workspaceStorageDir, {
+      workspaceStorageDir,
+      globalStateDb,
+      nameSuffix: result.nameSuffix,
+    });
+  }
+}
+
 export class CursorProvider implements AgentProvider {
-  readonly name = "Cursor";
-  readonly slug = "cursor";
+  readonly name: string;
+  readonly slug: string;
+
+  private readonly _workspaceStorageDir: string;
+  private readonly _globalStateDb: string;
+
+  constructor(install?: CursorInstallConfig) {
+    if (install?.nameSuffix) {
+      this.name = `Cursor (${install.nameSuffix})`;
+      this.slug = `cursor-${install.nameSuffix.toLowerCase()}`;
+    } else {
+      this.name = "Cursor";
+      this.slug = "cursor";
+    }
+    this._workspaceStorageDir = install?.workspaceStorageDir ?? CURSOR_WORKSPACE_STORAGE_DIR;
+    this._globalStateDb = install?.globalStateDb ?? CURSOR_GLOBAL_STATE_DB;
+  }
 
   /** Matched chat directories (~/.cursor/chats/<hash>/) */
   private chatDirs: string[] = [];
@@ -84,7 +191,10 @@ export class CursorProvider implements AgentProvider {
   private projectPath: string | null = null;
 
   async detect(): Promise<boolean> {
-    if (!(await directoryExists(CURSOR_CHATS_DIR))) return false;
+    const hasChats = await directoryExists(CURSOR_CHATS_DIR);
+    const hasWorkspaceStorage = await directoryExists(this._workspaceStorageDir);
+
+    if (!hasChats && !hasWorkspaceStorage) return false;
 
     const hasCli = await hasSqliteCli();
     if (!hasCli) {
@@ -112,10 +222,10 @@ export class CursorProvider implements AgentProvider {
       const hashToPath = new Map<string, string>();
       const workspaceDirs: Array<{ folderPath: string; wsDir: string }> = [];
 
-      if (await directoryExists(CURSOR_WORKSPACE_STORAGE_DIR)) {
+      if (await directoryExists(this._workspaceStorageDir)) {
         let wsEntries: import("node:fs").Dirent[];
         try {
-          wsEntries = await fs.readdir(CURSOR_WORKSPACE_STORAGE_DIR, {
+          wsEntries = await fs.readdir(this._workspaceStorageDir, {
             withFileTypes: true,
           });
         } catch {
@@ -125,7 +235,7 @@ export class CursorProvider implements AgentProvider {
         for (const wsEntry of wsEntries) {
           if (!wsEntry.isDirectory()) continue;
           const wsJsonPath = path.join(
-            CURSOR_WORKSPACE_STORAGE_DIR,
+            this._workspaceStorageDir,
             wsEntry.name,
             "workspace.json",
           );
@@ -145,7 +255,7 @@ export class CursorProvider implements AgentProvider {
           hashToPath.set(hash, folderPath);
           workspaceDirs.push({
             folderPath,
-            wsDir: path.join(CURSOR_WORKSPACE_STORAGE_DIR, wsEntry.name),
+            wsDir: path.join(this._workspaceStorageDir, wsEntry.name),
           });
         }
       }
@@ -326,6 +436,11 @@ export class CursorProvider implements AgentProvider {
 
     // Find workspace storage directory (for plan registry + state extraction)
     await this.findWorkspaceStorageDir(context.projectPath);
+    // Ensure transcript/terminal files are collected even for Composer-only projects
+    // (projects with no entries in ~/.cursor/chats/ never reach addProjectSlug via Strategy A/B)
+    if (this.workspaceStorageDir) {
+      this.addProjectSlug(context.projectPath);
+    }
 
     // Strategy C: Discover Composer sessions from workspace state.vscdb
     const composerSessions = await this.findComposerSessions(seenIds);
@@ -712,11 +827,11 @@ export class CursorProvider implements AgentProvider {
   private async findWorkspaceStorageDir(
     projectPath: string,
   ): Promise<void> {
-    if (!(await directoryExists(CURSOR_WORKSPACE_STORAGE_DIR))) return;
+    if (!(await directoryExists(this._workspaceStorageDir))) return;
 
     let entries;
     try {
-      entries = await fs.readdir(CURSOR_WORKSPACE_STORAGE_DIR, {
+      entries = await fs.readdir(this._workspaceStorageDir, {
         withFileTypes: true,
       });
     } catch {
@@ -729,7 +844,7 @@ export class CursorProvider implements AgentProvider {
       if (!entry.isDirectory()) continue;
 
       const wsJsonPath = path.join(
-        CURSOR_WORKSPACE_STORAGE_DIR,
+        this._workspaceStorageDir,
         entry.name,
         "workspace.json",
       );
@@ -738,7 +853,7 @@ export class CursorProvider implements AgentProvider {
 
       if (wsJson.folder === expectedFolder) {
         this.workspaceStorageDir = path.join(
-          CURSOR_WORKSPACE_STORAGE_DIR,
+          this._workspaceStorageDir,
           entry.name,
         );
         this.workspaceJsonPath = wsJsonPath;
@@ -846,14 +961,14 @@ export class CursorProvider implements AgentProvider {
    */
   private async discoverPlansFromRegistry(): Promise<DiscoveredPlan[]> {
     if (!this.sqliteAvailable) return [];
-    if (!(await fileExists(CURSOR_GLOBAL_STATE_DB))) return [];
+    if (!(await fileExists(this._globalStateDb))) return [];
 
     const composerIds = await this.getWorkspaceComposerIds();
     if (composerIds.size === 0) return [];
 
     try {
       const raw = await sqliteQuery(
-        CURSOR_GLOBAL_STATE_DB,
+        this._globalStateDb,
         "SELECT value FROM ItemTable WHERE key='composer.planRegistry';",
       );
       const trimmed = raw.trim();
@@ -898,7 +1013,7 @@ export class CursorProvider implements AgentProvider {
    */
   private async createStateExtract(): Promise<string | null> {
     if (!this.sqliteAvailable) return null;
-    if (!(await fileExists(CURSOR_GLOBAL_STATE_DB))) return null;
+    if (!(await fileExists(this._globalStateDb))) return null;
 
     const composerIds = await this.getWorkspaceComposerIds();
 
@@ -906,7 +1021,7 @@ export class CursorProvider implements AgentProvider {
       const tmpPath = path.join(os.tmpdir(), `cursor-state-${Date.now()}.vscdb`);
 
       // Build SQL operations
-      const escapedGlobalPath = CURSOR_GLOBAL_STATE_DB.replace(/'/g, "''");
+      const escapedGlobalPath = this._globalStateDb.replace(/'/g, "''");
       const sqlParts: string[] = [
         `ATTACH DATABASE '${escapedGlobalPath}' AS source;`,
         "CREATE TABLE IF NOT EXISTS ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB);",
@@ -975,7 +1090,7 @@ export class CursorProvider implements AgentProvider {
           }
         : null,
       globalState: {
-        path: CURSOR_GLOBAL_STATE_DB,
+        path: this._globalStateDb,
         planRegistryKey: "ItemTable key='composer.planRegistry'",
         composerDataKeyPattern: "cursorDiskKV key='composerData:<composerId>'",
       },
