@@ -5,10 +5,11 @@ export type { DiscoveredSession, DiscoveredProject, AgentHandle, ExternalWorktre
 export type { VibenessResult } from "./vibeness.js";
 export { detectExternalWorktrees } from "./vibeness.js";
 export type { UploadMetadata, UploadResult } from "./upload.js";
+export type { SkippedFile, BundleResult } from "./archive.js";
 export type { GitMetadata } from "./git.js";
 export { initSqlite } from "./sqlite.js";
 export { discoverAllProjects, findProjectSessions } from "./discovery.js";
-export { createBundle, downloadBundle } from "./archive.js";
+export { createBundle, downloadBundle, detectOversizedFiles } from "./archive.js";
 export { calculateVibeness } from "./vibeness.js";
 export { uploadBundle } from "./upload.js";
 export { readGitMetadata } from "./git.js";
