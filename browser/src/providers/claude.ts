@@ -19,7 +19,7 @@ interface ClaudeMessage {
   cwd?: string;
   timestamp?: string;
   aiTitle?: string;
-  message?: { role?: string; content?: Array<{ type?: string; text?: string }> };
+  message?: { role?: string; content?: Array<{ type?: string; text?: string }> | string };
 }
 
 // ── Shared inner helpers ──────────────────────────────────────────────────────
@@ -77,17 +77,31 @@ async function parseSessionFile(
       }
 
       if (!firstPrompt && msg.message?.content) {
-        const block = msg.message.content.find((c) => c.type === "text");
-        if (block?.text) {
-          firstPrompt = stripIdeTags(block.text).slice(0, 200) || null;
+        const content = msg.message.content;
+        if (typeof content === "string") {
+          firstPrompt = stripIdeTags(content).slice(0, 200) || null;
+        } else if (Array.isArray(content)) {
+          const block = content.find((c) => c.type === "text");
+          if (block?.text) {
+            firstPrompt = stripIdeTags(block.text).slice(0, 200) || null;
+          }
         }
       }
     }
-  } catch {
+  } catch (err) {
+    console.debug(`[claude] DROP ${fileName}: parse error`, err);
     return null;
   }
 
-  if (!belongsToProject) return null;
+  if (!belongsToProject) {
+    console.debug(`[claude] DROP ${fileName}: cwd mismatch (project=${projectPath})`);
+    return null;
+  }
+  // Exclude file-history-snapshot and other non-session .jsonl files written by Claude Code
+  if (messageCount === 0) {
+    console.debug(`[claude] DROP ${fileName}: no user messages (snapshot?)`);
+    return null;
+  }
 
   const file = await fileHandle.getFile();
   return {
@@ -120,20 +134,24 @@ export async function discoverClaudeProjects(
     if (encodedDirHandle.kind !== "directory") continue;
     const encDir = encodedDirHandle as FileSystemDirectoryHandle;
 
-    let cwd: string | null = null;
+    // Read each file individually: only count files that are real sessions
+    // (have at least one user message with a cwd).  file-history-snapshot and
+    // other non-session .jsonl files written by Claude Code are excluded.
+    let dirCwd: string | null = null;
     let count = 0;
     for await (const [fileName, fileHandle] of encDir.entries()) {
       if (fileHandle.kind !== "file" || !fileName.endsWith(".jsonl")) continue;
-      count++;
-      if (!cwd) {
-        try {
-          const text = await readText(fileHandle as FileSystemFileHandle);
-          cwd = extractCwdFromText(text);
-        } catch { /* keep trying with next file */ }
-      }
+      try {
+        const text = await readText(fileHandle as FileSystemFileHandle);
+        const fileCwd = extractCwdFromText(text);
+        if (fileCwd) {
+          if (!dirCwd) dirCwd = fileCwd;
+          count++;
+        }
+      } catch { /* skip unreadable files */ }
     }
-    if (cwd && count > 0) {
-      projects.set(cwd, (projects.get(cwd) ?? 0) + count);
+    if (dirCwd && count > 0) {
+      projects.set(dirCwd, (projects.get(dirCwd) ?? 0) + count);
     }
   }
 
@@ -153,7 +171,8 @@ export async function findClaudeSessions(
   if (!projectsDir) return [];
   const sessionDir = await getDirHandle(projectsDir, encoded);
   if (!sessionDir) return [];
-  return readSessionsFromDir(sessionDir, projectPath);
+  // Directory is already scoped to this project — no cwd check needed
+  return readSessionsFromDir(sessionDir, projectPath, true);
 }
 
 /**
@@ -254,9 +273,11 @@ async function readSessionsFromDir(
   skipCwdCheck = false,
 ): Promise<DiscoveredSession[]> {
   const sessions: DiscoveredSession[] = [];
+  let total = 0;
 
   for await (const [fileName, fileHandle] of sessionDir.entries()) {
     if (fileHandle.kind !== "file" || !fileName.endsWith(".jsonl")) continue;
+    total++;
     try {
       const session = await parseSessionFile(
         fileName,
@@ -270,5 +291,6 @@ async function readSessionsFromDir(
     }
   }
 
+  console.debug(`[claude] readSessionsFromDir ${projectPath}: ${sessions.length}/${total} accepted`);
   return sessions;
 }
