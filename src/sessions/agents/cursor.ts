@@ -375,8 +375,23 @@ export class CursorProvider implements AgentProvider {
 
             const data = JSON.parse(trimmed) as {
               allComposers?: Array<unknown>;
+              selectedComposerIds?: string[];
             };
-            const count = data.allComposers?.length ?? 0;
+            let count = data.allComposers?.length ?? 0;
+
+            // Migrated format: allComposers removed, IDs tracked via view-pane keys
+            if (count === 0 && data.selectedComposerIds?.length) {
+              try {
+                const countRaw = await sqliteQuery(
+                  stateDbPath,
+                  "SELECT count(*) FROM ItemTable WHERE key LIKE 'workbench.panel.composerChatViewPane.%';",
+                );
+                count = parseInt(countRaw.trim(), 10) || data.selectedComposerIds.length;
+              } catch {
+                count = data.selectedComposerIds.length;
+              }
+            }
+
             if (count > 0) {
               projects.set(
                 folderPath,
@@ -839,6 +854,9 @@ export class CursorProvider implements AgentProvider {
     }
 
     const expectedFolder = `file://${projectPath}`;
+    let bestDir: string | null = null;
+    let bestJsonPath: string | null = null;
+    let bestSize = -1;
 
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
@@ -852,13 +870,31 @@ export class CursorProvider implements AgentProvider {
       if (!wsJson?.folder) continue;
 
       if (wsJson.folder === expectedFolder) {
-        this.workspaceStorageDir = path.join(
+        // Prefer the workspace with the largest state.vscdb (most data)
+        const stateDbPath = path.join(
           this._workspaceStorageDir,
           entry.name,
+          "state.vscdb",
         );
-        this.workspaceJsonPath = wsJsonPath;
-        return;
+        let size = 0;
+        try {
+          const stat = await fs.stat(stateDbPath);
+          size = stat.size;
+        } catch {
+          // no state.vscdb
+        }
+
+        if (size > bestSize) {
+          bestSize = size;
+          bestDir = path.join(this._workspaceStorageDir, entry.name);
+          bestJsonPath = wsJsonPath;
+        }
       }
+    }
+
+    if (bestDir) {
+      this.workspaceStorageDir = bestDir;
+      this.workspaceJsonPath = bestJsonPath;
     }
   }
 
@@ -890,27 +926,55 @@ export class CursorProvider implements AgentProvider {
           lastUpdatedAt?: number;
           subtitle?: string;
         }>;
+        selectedComposerIds?: string[];
       };
 
       const sessions: DiscoveredSession[] = [];
-      for (const composer of data.allComposers ?? []) {
-        if (!composer.composerId || seenIds.has(composer.composerId)) continue;
-        seenIds.add(composer.composerId);
 
-        sessions.push({
-          agentName: this.name,
-          sessionId: composer.composerId,
-          summary: composer.name && composer.name !== "New Composer" ? composer.name : null,
-          firstPrompt: composer.subtitle ?? null,
-          messageCount: null,
-          created: composer.createdAt
-            ? new Date(composer.createdAt).toISOString()
-            : null,
-          modified: composer.lastUpdatedAt
-            ? new Date(composer.lastUpdatedAt).toISOString()
-            : null,
-          sizeBytes: 0,
-        });
+      if (data.allComposers?.length) {
+        // Legacy format: full composer data inline
+        for (const composer of data.allComposers) {
+          if (!composer.composerId || seenIds.has(composer.composerId)) continue;
+          seenIds.add(composer.composerId);
+
+          sessions.push({
+            agentName: this.name,
+            sessionId: composer.composerId,
+            summary: composer.name && composer.name !== "New Composer" ? composer.name : null,
+            firstPrompt: composer.subtitle ?? null,
+            messageCount: null,
+            created: composer.createdAt
+              ? new Date(composer.createdAt).toISOString()
+              : null,
+            modified: composer.lastUpdatedAt
+              ? new Date(composer.lastUpdatedAt).toISOString()
+              : null,
+            sizeBytes: 0,
+          });
+        }
+      } else if (data.selectedComposerIds?.length) {
+        // Migrated format: IDs from view-pane keys, data in global cursorDiskKV
+        const composerIds = await this.getMigratedComposerIds(wsStateDb);
+        for (const composerId of composerIds) {
+          if (seenIds.has(composerId)) continue;
+          seenIds.add(composerId);
+
+          const meta = await this.readComposerFromGlobalKV(composerId);
+          sessions.push({
+            agentName: this.name,
+            sessionId: composerId,
+            summary: meta?.name && meta.name !== "New Composer" ? meta.name : null,
+            firstPrompt: null,
+            messageCount: null,
+            created: meta?.createdAt
+              ? new Date(meta.createdAt).toISOString()
+              : null,
+            modified: meta?.lastUpdatedAt
+              ? new Date(meta.lastUpdatedAt).toISOString()
+              : null,
+            sizeBytes: 0,
+          });
+        }
       }
 
       return sessions;
@@ -943,10 +1007,19 @@ export class CursorProvider implements AgentProvider {
 
       const data = JSON.parse(trimmed) as {
         allComposers?: Array<{ composerId?: string }>;
+        selectedComposerIds?: string[];
       };
-      for (const composer of data.allComposers ?? []) {
-        if (composer.composerId) {
-          this.workspaceComposerIds.add(composer.composerId);
+      if (data.allComposers?.length) {
+        for (const composer of data.allComposers) {
+          if (composer.composerId) {
+            this.workspaceComposerIds.add(composer.composerId);
+          }
+        }
+      } else if (data.selectedComposerIds?.length) {
+        const wsStateDb = path.join(this.workspaceStorageDir!, "state.vscdb");
+        const ids = await this.getMigratedComposerIds(wsStateDb);
+        for (const id of ids) {
+          this.workspaceComposerIds.add(id);
         }
       }
     } catch {
@@ -954,6 +1027,80 @@ export class CursorProvider implements AgentProvider {
     }
 
     return this.workspaceComposerIds;
+  }
+
+  /**
+   * Get all composer IDs from a migrated workspace state.vscdb.
+   * Merges IDs from composerChatViewPane keys and selectedComposerIds.
+   */
+  private async getMigratedComposerIds(wsStateDb: string): Promise<string[]> {
+    if (!this.sqliteAvailable) return [];
+
+    const ids = new Set<string>();
+
+    try {
+      // View-pane keys: workbench.panel.composerChatViewPane.<id>
+      const raw = await sqliteQuery(
+        wsStateDb,
+        "SELECT key FROM ItemTable WHERE key LIKE 'workbench.panel.composerChatViewPane.%';",
+      );
+      const prefix = "workbench.panel.composerChatViewPane.";
+      for (const line of raw.split("\n")) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith(prefix)) {
+          const id = trimmed.slice(prefix.length);
+          if (id) ids.add(id);
+        }
+      }
+    } catch {
+      // Skip
+    }
+
+    try {
+      // selectedComposerIds from composer.composerData
+      const raw = await sqliteQuery(
+        wsStateDb,
+        "SELECT value FROM ItemTable WHERE key='composer.composerData';",
+      );
+      const trimmed = raw.trim();
+      if (trimmed) {
+        const data = JSON.parse(trimmed) as { selectedComposerIds?: string[] };
+        for (const id of data.selectedComposerIds ?? []) {
+          ids.add(id);
+        }
+      }
+    } catch {
+      // Skip
+    }
+
+    return [...ids];
+  }
+
+  /**
+   * Read composer metadata from the global cursorDiskKV table.
+   */
+  private async readComposerFromGlobalKV(
+    composerId: string,
+  ): Promise<{
+    name?: string;
+    createdAt?: number;
+    lastUpdatedAt?: number;
+  } | null> {
+    if (!this.sqliteAvailable) return null;
+    if (!(await fileExists(this._globalStateDb))) return null;
+
+    try {
+      const escapedId = composerId.replace(/'/g, "''");
+      const raw = await sqliteQuery(
+        this._globalStateDb,
+        `SELECT value FROM cursorDiskKV WHERE key='composerData:${escapedId}';`,
+      );
+      const trimmed = raw.trim();
+      if (!trimmed) return null;
+      return JSON.parse(trimmed);
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -1086,7 +1233,7 @@ export class CursorProvider implements AgentProvider {
             stateDbPath: path.join(this.workspaceStorageDir, "state.vscdb"),
             composerIds: [...(this.workspaceComposerIds ?? [])],
             composerIdsSource:
-              "ItemTable key='composer.composerData' → allComposers[].composerId",
+              "ItemTable key='composer.composerData' → allComposers[].composerId OR workbench.panel.composerChatViewPane.* keys",
           }
         : null,
       globalState: {

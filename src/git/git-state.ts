@@ -105,7 +105,7 @@ async function createGitBundle(cwd: string): Promise<string | null> {
     }
     await fsp.unlink(bundlePath).catch(() => {});
     throw new VibeError(
-      `Git bundle exceeds ${MAX_ARCHIVE_SIZE_MB} MB even with HEAD only.`,
+      `Git bundle exceeds ${MAX_ARCHIVE_SIZE_MB / 1024} GB even with HEAD only.`,
       "Your repository history contains very large files. Consider cleaning up large blobs with git-filter-repo before sharing.",
     );
   } catch (err) {

@@ -48,7 +48,7 @@ export function uploadFailed(step: string, cause: unknown): VibeError {
 
 export function archiveTooLarge(sizeMB: number, limitMB: number): VibeError {
   return new VibeError(
-    `Archive is ${sizeMB.toFixed(0)}MB, which exceeds the ${limitMB}MB limit.`,
+    `Archive is ${(sizeMB / 1024).toFixed(1)}GB, which exceeds the ${limitMB / 1024}GB limit.`,
     "Consider excluding large files or directories.",
   );
 }

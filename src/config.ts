@@ -67,7 +67,7 @@ export const API_BASE_URL =
 export const isDefaultApiUrl =
   !process.env.VIBE_SHARING_API_URL || API_BASE_URL === DEFAULT_API_URL;
 
-export const MAX_ARCHIVE_SIZE_MB = 500;
+export const MAX_ARCHIVE_SIZE_MB = 5000;
 
 export const TOOL_VERSION = "0.1.0";
 
