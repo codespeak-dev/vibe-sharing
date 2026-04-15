@@ -160,7 +160,7 @@ export function ThankYouScreen({
 
         const sizeMB = sizeBytes / (1024 * 1024);
         if (sizeMB > MAX_ARCHIVE_SIZE_MB) {
-          setError(`Archive too large (${sizeMB.toFixed(1)} MB, max is ${MAX_ARCHIVE_SIZE_MB} MB). Try running with --no-sessions to exclude AI session data.`);
+          setError(`Archive too large (${(sizeMB / 1024).toFixed(1)} GB, max is ${MAX_ARCHIVE_SIZE_MB / 1024} GB).`);
           return;
         }
 
