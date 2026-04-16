@@ -7,6 +7,8 @@ import { ActionBar } from "../components/action-bar.js";
 import { getGitRemoteUrl, getGitWorktrees, type GitWorktree } from "../../utils/paths.js";
 import { getProjectStats, type ProjectStats } from "../../utils/project-stats.js";
 import { getFirstName } from "../../utils/user-info.js";
+import { discoverAllSessions } from "../../sessions/discovery.js";
+import { computeCommitCoverage, computeWriteFileCoverage } from "../../completeness/metrics.js";
 
 interface ShareProjectScreenProps {
   projectPath: string;
@@ -39,6 +41,11 @@ export function ShareProjectScreen({
   const [loading, setLoading] = useState(true);
   const [firstName, setFirstName] = useState<string | null>(null);
   const [worktrees, setWorktrees] = useState<GitWorktree[]>([]);
+  const [commitCoverage, setCommitCoverage] = useState<number | null | "loading">("loading");
+  const [writeFileCoverage, setWriteFileCoverage] = useState<number | null | "loading">("loading");
+  const [writeCodeFileCoverage, setWriteCodeFileCoverage] = useState<number | null | "loading">("loading");
+  const [writeFileWeightedCoverage, setWriteFileWeightedCoverage] = useState<number | null | "loading">("loading");
+  const [writeCodeFileWeightedCoverage, setWriteCodeFileWeightedCoverage] = useState<number | null | "loading">("loading");
   const { stdout } = useStdout();
   const width = Math.min(60, (stdout.columns ?? 80) - 4);
 
@@ -63,6 +70,66 @@ export function ShareProjectScreen({
       cancelled = true;
     };
   }, [projectPath, showHeader]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const wt = await getGitWorktrees(projectPath).catch(() => [
+          { path: projectPath, branch: null },
+        ]);
+        const gitRemoteUrl = await getGitRemoteUrl(projectPath).catch(() => null);
+
+        const discovery = await discoverAllSessions({
+          worktreePaths: wt.map((w) => w.path),
+          gitRemoteUrl,
+        });
+
+        if (cancelled) return;
+
+        const allSessions: Array<{ created: string | null; modified: string | null }> = [];
+        const allJsonlPaths: string[] = [];
+
+        for (const { provider, sessions } of discovery.byAgent.values()) {
+          allSessions.push(...sessions);
+          if (provider.getProviderFiles) {
+            const files = await provider.getProviderFiles();
+            for (const f of files) {
+              if (f.endsWith(".jsonl")) allJsonlPaths.push(f);
+            }
+          }
+        }
+
+        if (cancelled) return;
+
+        const [cc, wfc] = await Promise.all([
+          computeCommitCoverage(projectPath, allSessions),
+          computeWriteFileCoverage(projectPath, allJsonlPaths),
+        ]);
+
+        if (!cancelled) {
+          setCommitCoverage(cc);
+          setWriteFileCoverage(wfc.all);
+          setWriteCodeFileCoverage(wfc.code);
+          setWriteFileWeightedCoverage(wfc.allWeighted);
+          setWriteCodeFileWeightedCoverage(wfc.codeWeighted);
+        }
+      } catch {
+        if (!cancelled) {
+          setCommitCoverage(null);
+          setWriteFileCoverage(null);
+          setWriteCodeFileCoverage(null);
+          setWriteFileWeightedCoverage(null);
+          setWriteCodeFileWeightedCoverage(null);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectPath]);
 
   // Aggregate sessions across all worktrees
   const worktreePaths = new Set(worktrees.map((wt) => wt.path));
@@ -167,6 +234,62 @@ export function ShareProjectScreen({
           <Text>  Uncommitted: {stats.uncommittedCount} files</Text>
         </Box>
       )}
+
+      {/* Coverage metrics */}
+      <Box flexDirection="column" marginTop={1}>
+        <Text bold color="yellow">Coverage</Text>
+        <Text>
+          {"  "}{"Commits".padEnd(20)}
+          {commitCoverage === "loading" ? (
+            <Text dimColor>computing...</Text>
+          ) : commitCoverage === null ? (
+            <Text dimColor>n/a</Text>
+          ) : (
+            <>
+              <Text color="cyan" bold>{Math.round(commitCoverage * 100)}%</Text>
+              <Text dimColor>  vibed / total</Text>
+            </>
+          )}
+        </Text>
+        <Text>
+          {"  "}{"Files (all)".padEnd(20)}
+          {writeFileCoverage === "loading" ? (
+            <Text dimColor>computing...</Text>
+          ) : writeFileCoverage === null ? (
+            <Text dimColor>n/a</Text>
+          ) : (
+            <>
+              <Text color="cyan" bold>{Math.round(writeFileCoverage * 100)}%</Text>
+              {writeFileWeightedCoverage !== "loading" && writeFileWeightedCoverage !== null && (
+                <Text dimColor> / </Text>
+              )}
+              {writeFileWeightedCoverage !== "loading" && writeFileWeightedCoverage !== null && (
+                <><Text color="cyan">{Math.round(writeFileWeightedCoverage * 100)}%w</Text></>
+              )}
+              <Text dimColor>  files / lines</Text>
+            </>
+          )}
+        </Text>
+        <Text>
+          {"  "}{"Files (code only)".padEnd(20)}
+          {writeCodeFileCoverage === "loading" ? (
+            <Text dimColor>computing...</Text>
+          ) : writeCodeFileCoverage === null ? (
+            <Text dimColor>n/a</Text>
+          ) : (
+            <>
+              <Text color="cyan" bold>{Math.round(writeCodeFileCoverage * 100)}%</Text>
+              {writeCodeFileWeightedCoverage !== "loading" && writeCodeFileWeightedCoverage !== null && (
+                <Text dimColor> / </Text>
+              )}
+              {writeCodeFileWeightedCoverage !== "loading" && writeCodeFileWeightedCoverage !== null && (
+                <><Text color="cyan">{Math.round(writeCodeFileWeightedCoverage * 100)}%w</Text></>
+              )}
+              <Text dimColor>  files / lines</Text>
+            </>
+          )}
+        </Text>
+      </Box>
 
       <ActionBar
         actions={[

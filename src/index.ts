@@ -20,23 +20,9 @@ program
       // Legacy flow: existing linear CLI
       await run(options);
     } else {
-      // New interactive flow with ink UI
-      const { startApp } = await import("./ui/app.js");
-      const { discoverAllProjects } = await import(
-        "./sessions/global-discovery.js"
-      );
-      const { determineRoute } = await import("./routing.js");
-
-      const cwd = process.cwd();
-
-      startApp({
-        projects: [],
-        onDiscoverProjects: async (onProgress) => {
-          const result = await discoverAllProjects(onProgress);
-          return result.projects;
-        },
-        initialScreen: undefined, // LoadingScreen will handle discovery + routing
-      });
+      // Default: browser UI mode — start local server + open browser
+      const { startBrowserUI } = await import("./server/browser-ui.js");
+      await startBrowserUI();
     }
   });
 
