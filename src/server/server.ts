@@ -28,7 +28,7 @@ export interface ServerState {
 
 /** Origins allowed to make cross-origin requests to this server. */
 function isAllowedOrigin(origin: string): boolean {
-  if (origin === "https://vibe-share.codespeak.dev") return true;
+  if (origin === "https://codespeak.dev") return true;
   // Allow any localhost port — server is local-only and bearer-token protected
   if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return true;
   if (/^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) return true;
@@ -40,6 +40,7 @@ function setCORS(req: http.IncomingMessage, res: http.ServerResponse): void {
   if (isAllowedOrigin(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
   }
+  res.setHeader("Access-Control-Allow-Private-Network", "true");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.setHeader("Vary", "Origin");
@@ -172,18 +173,32 @@ export function createCliServer(state: ServerState): http.Server {
   return server;
 }
 
+const DEFAULT_PORT = 7777;
+
 export function startCliServer(state: ServerState): Promise<{ server: http.Server; port: number }> {
   return new Promise((resolve, reject) => {
     const server = createCliServer(state);
-    server.listen(0, "127.0.0.1", () => {
-      const addr = server.address();
-      if (!addr || typeof addr === "string") {
-        reject(new Error("Failed to get server address"));
-        return;
-      }
-      resolve({ server, port: addr.port });
-    });
-    server.on("error", reject);
+
+    function tryListen(port: number) {
+      server.listen(port, "localhost", () => {
+        const addr = server.address();
+        if (!addr || typeof addr === "string") {
+          reject(new Error("Failed to get server address"));
+          return;
+        }
+        resolve({ server, port: addr.port });
+      });
+      server.once("error", (err: NodeJS.ErrnoException) => {
+        if (err.code === "EADDRINUSE" && port !== 0) {
+          server.removeAllListeners("error");
+          tryListen(0);
+        } else {
+          reject(err);
+        }
+      });
+    }
+
+    tryListen(DEFAULT_PORT);
   });
 }
 

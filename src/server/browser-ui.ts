@@ -7,7 +7,7 @@
 import { startCliServer, detectAgentDirs, generateToken } from "./server.js";
 import type { ServerState } from "./server.js";
 
-const WEBSITE_URL = process.env["VIBE_SHARE_WEBSITE_URL"] ?? "https://vibe-share.codespeak.dev";
+const WEBSITE_URL = process.env["VIBE_SHARE_WEBSITE_URL"] ?? "https://codespeak.dev";
 
 async function openBrowser(url: string): Promise<void> {
   const { exec } = await import("node:child_process");
@@ -34,7 +34,7 @@ export async function startBrowserUI(): Promise<void> {
   const state: ServerState = { agents, token, homedir: os.homedir() };
   const { server, port } = await startCliServer(state);
 
-  const apiBase = `http://127.0.0.1:${port}`;
+  const apiBase = `http://localhost:${port}`;
   const browserUrl = `${WEBSITE_URL}/share?cliBase=${encodeURIComponent(apiBase)}&cliToken=${encodeURIComponent(token)}`;
 
   const agentNames = agents.map((a) => a.name).join(", ") || "none detected";
