@@ -28,7 +28,7 @@ export interface ServerState {
 
 /** Origins allowed to make cross-origin requests to this server. */
 function isAllowedOrigin(origin: string): boolean {
-  if (origin === "https://codespeak.dev") return true;
+  if (/^https:\/\/(?:[a-z0-9-]+\.)?codespeak\.dev$/.test(origin)) return true;
   // Allow any localhost port — server is local-only and bearer-token protected
   if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return true;
   if (/^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(origin)) return true;
