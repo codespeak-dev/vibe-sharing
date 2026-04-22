@@ -13,6 +13,11 @@ export const config = {
   slackBotTokenSsmParam: "/vibe-share/slack-bot-token",
   slackChannelIdSsmParam: "/vibe-share/slack-channel-id",
 
+  // SSM parameter holding the shared-secret API key for the test-data endpoints.
+  // Create before deploying:
+  //   aws ssm put-parameter --name /vibe-share/test-data-api-key --type SecureString --value "<long-random>"
+  testDataApiKeySsmParam: "/vibe-share/test-data-api-key",
+
   adminUiUrl: "https://admin.vibe-share.codespeak.dev",
 
   // Cognito hosted UI domain prefix.

@@ -22,6 +22,7 @@ import * as path from "path";
 import { config } from "./config";
 
 const UPLOAD_PREFIX = "uploads/";
+const TEST_DATA_ITEM_PREFIX = "items/";
 
 export class VibeShareStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -35,6 +36,21 @@ export class VibeShareStack extends cdk.Stack {
       cors: [
         {
           allowedMethods: [s3.HttpMethods.PUT],
+          allowedOrigins: config.s3CorsAllowedOrigins,
+          allowedHeaders: ["Content-Type", "Content-Length"],
+          maxAge: 3600,
+        },
+      ],
+    });
+
+    // ─── Test Data S3 Bucket (generic artifact storage, API-key gated) ───
+    const testDataBucket = new s3.Bucket(this, "TestDataBucket", {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      cors: [
+        {
+          allowedMethods: [s3.HttpMethods.PUT, s3.HttpMethods.GET],
           allowedOrigins: config.s3CorsAllowedOrigins,
           allowedHeaders: ["Content-Type", "Content-Length"],
           maxAge: 3600,
@@ -250,6 +266,53 @@ export class VibeShareStack extends cdk.Stack {
       environment: {}, // no env needed
     });
 
+    // ─── Test Data Lambdas (API-key auth, separate bucket) ───
+    const testDataApiKeyParam = ssm.StringParameter.fromSecureStringParameterAttributes(
+      this,
+      "TestDataApiKeyParam",
+      { parameterName: config.testDataApiKeySsmParam }
+    );
+
+    const testDataEnv = {
+      BUCKET_NAME: testDataBucket.bucketName,
+      ITEM_PREFIX: TEST_DATA_ITEM_PREFIX,
+      API_KEY_SSM_PARAM: config.testDataApiKeySsmParam,
+      PRESIGN_EXPIRY_SECONDS: "300",
+    };
+
+    const testDataCreateFn = new lambdaNode.NodejsFunction(this, "TestDataCreateFunction", {
+      ...sharedProps,
+      entry: path.join(lambdaDir, "testdata", "create", "index.ts"),
+      handler: "handler",
+      environment: testDataEnv,
+    });
+    testDataBucket.grantPut(testDataCreateFn, `${TEST_DATA_ITEM_PREFIX}*`);
+    testDataApiKeyParam.grantRead(testDataCreateFn);
+
+    const testDataListFn = new lambdaNode.NodejsFunction(this, "TestDataListFunction", {
+      ...sharedProps,
+      entry: path.join(lambdaDir, "testdata", "list", "index.ts"),
+      handler: "handler",
+      environment: testDataEnv,
+    });
+    testDataListFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["s3:ListBucket"],
+        resources: [testDataBucket.bucketArn],
+      })
+    );
+    testDataBucket.grantRead(testDataListFn, `${TEST_DATA_ITEM_PREFIX}*`);
+    testDataApiKeyParam.grantRead(testDataListFn);
+
+    const testDataDownloadFn = new lambdaNode.NodejsFunction(this, "TestDataDownloadFunction", {
+      ...sharedProps,
+      entry: path.join(lambdaDir, "testdata", "download", "index.ts"),
+      handler: "handler",
+      environment: testDataEnv,
+    });
+    testDataBucket.grantRead(testDataDownloadFn, `${TEST_DATA_ITEM_PREFIX}*`);
+    testDataApiKeyParam.grantRead(testDataDownloadFn);
+
     // ─── JWT Authorizer (Cognito) ───
     const jwtAuthorizer = new apigatewayv2Authorizers.HttpJwtAuthorizer(
       "CognitoAuthorizer",
@@ -268,7 +331,7 @@ export class VibeShareStack extends cdk.Stack {
           apigatewayv2.CorsHttpMethod.DELETE,
           apigatewayv2.CorsHttpMethod.PATCH,
         ],
-        allowHeaders: ["Content-Type", "Authorization"],
+        allowHeaders: ["Content-Type", "Authorization", "x-api-key"],
       },
     });
 
@@ -338,6 +401,34 @@ export class VibeShareStack extends cdk.Stack {
         listFilesFn
       ),
       authorizer: jwtAuthorizer,
+    });
+
+    // ─── Test Data routes (no JWT; handlers enforce x-api-key) ───
+    api.addRoutes({
+      path: "/api/v1/testdata",
+      methods: [apigatewayv2.HttpMethod.POST],
+      integration: new apigatewayv2Integrations.HttpLambdaIntegration(
+        "TestDataCreateIntegration",
+        testDataCreateFn
+      ),
+    });
+
+    api.addRoutes({
+      path: "/api/v1/testdata",
+      methods: [apigatewayv2.HttpMethod.GET],
+      integration: new apigatewayv2Integrations.HttpLambdaIntegration(
+        "TestDataListIntegration",
+        testDataListFn
+      ),
+    });
+
+    api.addRoutes({
+      path: "/api/v1/testdata/{itemId}/download",
+      methods: [apigatewayv2.HttpMethod.GET],
+      integration: new apigatewayv2Integrations.HttpLambdaIntegration(
+        "TestDataDownloadIntegration",
+        testDataDownloadFn
+      ),
     });
 
     const internalEmailsIntegration = new apigatewayv2Integrations.HttpLambdaIntegration(
@@ -543,6 +634,11 @@ export class VibeShareStack extends cdk.Stack {
     new cdk.CfnOutput(this, "BucketName", {
       value: bucket.bucketName,
       description: "S3 bucket name",
+    });
+
+    new cdk.CfnOutput(this, "TestDataBucketName", {
+      value: testDataBucket.bucketName,
+      description: "Test data S3 bucket name",
     });
 
     new cdk.CfnOutput(this, "TableName", {
