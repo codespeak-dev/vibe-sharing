@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from "aws-lambda";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, ListObjectsV2Command, GetObjectCommand, DeleteObjectsCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { ok, badRequest, serverError } from "../../shared/response";
 import { requireApiKey } from "../shared/auth";
@@ -86,6 +86,12 @@ export async function handler(
       { expiresIn: PRESIGN_EXPIRY }
     );
 
+    // Delete older items with the same manifest.id (overwrite semantics)
+    const incomingId = typeof body.manifest?.id === "string" ? body.manifest.id : null;
+    if (incomingId) {
+      await deleteStaleItems(incomingId, itemId);
+    }
+
     return ok({ itemId, uploadUrl, key: itemKey });
   } catch (err) {
     console.error("Create testdata error:", err);
@@ -93,5 +99,46 @@ export async function handler(
       return badRequest("Invalid JSON body");
     }
     return serverError("Internal server error");
+  }
+}
+
+async function deleteStaleItems(incomingId: string, skipItemId: string): Promise<void> {
+  const listed = await s3.send(
+    new ListObjectsV2Command({ Bucket: BUCKET_NAME, Prefix: ITEM_PREFIX, Delimiter: "/" })
+  );
+
+  const prefixes = (listed.CommonPrefixes ?? [])
+    .map((p) => p.Prefix)
+    .filter((p): p is string => Boolean(p));
+
+  for (const prefix of prefixes) {
+    const existingItemId = prefix.slice(ITEM_PREFIX.length).replace(/\/$/, "");
+    if (!existingItemId || existingItemId === skipItemId) continue;
+
+    const manifestKey = `${prefix}manifest.json`;
+    let existingCaseId: string | null = null;
+    try {
+      const obj = await s3.send(new GetObjectCommand({ Bucket: BUCKET_NAME, Key: manifestKey }));
+      const body = await obj.Body?.transformToString();
+      if (body) {
+        const m = JSON.parse(body) as Record<string, unknown>;
+        existingCaseId = typeof m.id === "string" ? m.id : null;
+      }
+    } catch {
+      continue;
+    }
+
+    if (existingCaseId !== incomingId) continue;
+
+    const objects = await s3.send(
+      new ListObjectsV2Command({ Bucket: BUCKET_NAME, Prefix: prefix })
+    );
+    const toDelete = (objects.Contents ?? []).map((o) => ({ Key: o.Key! }));
+    if (toDelete.length === 0) continue;
+
+    await s3.send(
+      new DeleteObjectsCommand({ Bucket: BUCKET_NAME, Delete: { Objects: toDelete, Quiet: true } })
+    );
+    console.log(`Deleted stale item ${existingItemId} (id=${incomingId})`);
   }
 }

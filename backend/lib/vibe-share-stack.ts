@@ -287,6 +287,14 @@ export class VibeShareStack extends cdk.Stack {
       environment: testDataEnv,
     });
     testDataBucket.grantPut(testDataCreateFn, `${TEST_DATA_ITEM_PREFIX}*`);
+    testDataBucket.grantRead(testDataCreateFn, `${TEST_DATA_ITEM_PREFIX}*`);
+    testDataBucket.grantDelete(testDataCreateFn, `${TEST_DATA_ITEM_PREFIX}*`);
+    testDataCreateFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["s3:ListBucket"],
+        resources: [testDataBucket.bucketArn],
+      })
+    );
     testDataApiKeyParam.grantRead(testDataCreateFn);
 
     const testDataListFn = new lambdaNode.NodejsFunction(this, "TestDataListFunction", {
@@ -312,6 +320,16 @@ export class VibeShareStack extends cdk.Stack {
     });
     testDataBucket.grantRead(testDataDownloadFn, `${TEST_DATA_ITEM_PREFIX}*`);
     testDataApiKeyParam.grantRead(testDataDownloadFn);
+
+    const testDataDeleteFn = new lambdaNode.NodejsFunction(this, "TestDataDeleteFunction", {
+      ...sharedProps,
+      entry: path.join(lambdaDir, "testdata", "delete", "index.ts"),
+      handler: "handler",
+      environment: testDataEnv,
+    });
+    testDataBucket.grantRead(testDataDeleteFn, `${TEST_DATA_ITEM_PREFIX}*`);
+    testDataBucket.grantDelete(testDataDeleteFn, `${TEST_DATA_ITEM_PREFIX}*`);
+    testDataApiKeyParam.grantRead(testDataDeleteFn);
 
     // ─── JWT Authorizer (Cognito) ───
     const jwtAuthorizer = new apigatewayv2Authorizers.HttpJwtAuthorizer(
@@ -428,6 +446,15 @@ export class VibeShareStack extends cdk.Stack {
       integration: new apigatewayv2Integrations.HttpLambdaIntegration(
         "TestDataDownloadIntegration",
         testDataDownloadFn
+      ),
+    });
+
+    api.addRoutes({
+      path: "/api/v1/testdata/{itemId}",
+      methods: [apigatewayv2.HttpMethod.DELETE],
+      integration: new apigatewayv2Integrations.HttpLambdaIntegration(
+        "TestDataDeleteIntegration",
+        testDataDeleteFn
       ),
     });
 
