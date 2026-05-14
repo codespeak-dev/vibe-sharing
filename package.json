@@ -18,7 +18,12 @@
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
-    "prepublishOnly": "tsc"
+    "prepublishOnly": "tsc",
+    "test": "vitest run && (cd session-viewer && npx vitest run) && playwright test",
+    "test:root": "vitest run",
+    "test:viewer": "cd session-viewer && npx vitest run",
+    "test:e2e": "playwright test",
+    "test:watch": "vitest"
   },
   "keywords": [
     "vibe-coding",
@@ -44,10 +49,23 @@
     "react": "^19.2.4"
   },
   "devDependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1042.0",
+    "@aws-sdk/client-s3": "^3.1042.0",
+    "@aws-sdk/client-sns": "^3.1042.0",
+    "@aws-sdk/client-ssm": "^3.1042.0",
+    "@aws-sdk/lib-dynamodb": "^3.1042.0",
+    "@aws-sdk/s3-request-presigner": "^3.1042.0",
+    "@playwright/test": "^1.59.1",
     "@types/archiver": "^6.0.0",
+    "@types/aws-lambda": "^8.10.161",
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.14",
+    "aws-cdk-lib": "^2.252.0",
+    "aws-sdk-client-mock": "^4.1.0",
+    "constructs": "^10.6.0",
+    "ink-testing-library": "^4.0.0",
     "tsx": "^4.0.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.9"
   }
 }
