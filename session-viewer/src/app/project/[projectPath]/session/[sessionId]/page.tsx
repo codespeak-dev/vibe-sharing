@@ -53,6 +53,7 @@ export default async function SessionDetailPage({
         />
       </div>
       <SessionClient sessionId={sessionId} encodedProjectPath={encodedPath} projectPath={projectPath} />
+
     </div>
   );
 }

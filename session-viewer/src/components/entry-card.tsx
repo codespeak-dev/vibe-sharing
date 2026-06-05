@@ -5,6 +5,8 @@ import { JsonViewer } from "./json-viewer";
 import { MessageRenderer, hasRenderedView, getHeaderExtra, isHeaderOnly, getCollapsedPreview, getDisplayType, entryReferencesPlans, entryHasThinking, getThinkingPreview, getEntryIdeTags, type ToolUseInfo } from "./message-renderer";
 import { truncate, foldCwd, shortenPath } from "@/lib/format";
 import { formatDateTime } from "@/lib/format";
+import { classifyTag, type ClassifyEntry } from "@/lib/classify";
+import { tagColor } from "@/lib/message-type-registry";
 
 interface SessionEntry {
   lineIndex: number;
@@ -12,18 +14,6 @@ interface SessionEntry {
   timestamp: string | null;
   raw: Record<string, unknown>;
 }
-
-const TYPE_COLORS: Record<string, string> = {
-  user: "bg-blue-900/50 text-blue-300",
-  assistant: "bg-green-900/50 text-green-300",
-  system: "bg-neutral-800 text-neutral-300",
-  progress: "bg-neutral-800/50 text-neutral-400",
-  "queue-operation": "bg-neutral-800/50 text-neutral-400",
-  "file-history-snapshot": "bg-neutral-800/50 text-neutral-400",
-  "last-prompt": "bg-purple-900/50 text-purple-300",
-  "ai-title": "bg-cyan-900/50 text-cyan-300",
-  "tool-result": "bg-amber-900/50 text-amber-300",
-};
 
 /** Extract a short file/path/pattern label from a tool_use input. */
 function toolDetail(info: ToolUseInfo, cwd: string): string | null {
@@ -61,7 +51,8 @@ export function EntryCard({ entry, forceExpanded, projectPath, toolMap, toolResu
     if (forceExpanded && !expanded) setExpanded(true);
   }, [forceExpanded]); // eslint-disable-line react-hooks/exhaustive-deps
   const [view, setView] = useState<"rendered" | "raw">(canRender ? "rendered" : "raw");
-  const colorClass = TYPE_COLORS[displayType] ?? "bg-neutral-800/50 text-neutral-400";
+  const entryTag = classifyTag({ type: entry.type, raw: entry.raw } as ClassifyEntry);
+  const colorClass = tagColor(entryTag);
   const headerExtra = getHeaderExtra(entry.raw);
   const preview = getCollapsedPreview(entry.raw);
   const hasPlan = entryReferencesPlans(entry.raw);

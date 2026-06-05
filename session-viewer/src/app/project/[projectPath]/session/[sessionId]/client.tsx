@@ -18,6 +18,17 @@ import { type FilterState, initFilter, saveFilter } from "@/lib/filter-state";
 
 // ── Rendering components ───────────────────────────────────────────
 
+/** Check if a Layer2Item contains a given entry lineIndex. */
+function layer2Contains(item: Layer2Item, lineIndex: number): boolean {
+  if (item.kind === "entry") return item.entry.lineIndex === lineIndex;
+  return item.entries.some((e) => e.lineIndex === lineIndex);
+}
+
+/** Check if a CollapsedGroup contains a given entry lineIndex. */
+function collapsedGroupContains(group: CollapsedGroup, lineIndex: number): boolean {
+  return group.items.some((item) => layer2Contains(item, lineIndex));
+}
+
 function DisplayItemView({
   item,
   projectPath,
@@ -28,6 +39,7 @@ function DisplayItemView({
   expandAll,
   defaultModel,
   subagentLinks,
+  highlightEntry,
 }: {
   item: DisplayItem;
   projectPath: string;
@@ -38,16 +50,17 @@ function DisplayItemView({
   expandAll: boolean;
   defaultModel?: string;
   subagentLinks?: SubagentLinks;
+  highlightEntry?: number | null;
 }) {
   if (item.kind === "entry") {
     return (
       <EntryCard
         entry={item.entry}
-        forceExpanded={expandAll || item.defaultExpanded}
+        forceExpanded={expandAll || item.defaultExpanded || item.entry.lineIndex === highlightEntry}
         projectPath={projectPath}
         toolMap={toolMap}
         toolResultMap={toolResultMap}
-            toolTimestamps={toolTimestamps}
+        toolTimestamps={toolTimestamps}
         defaultModel={defaultModel}
         subagentLinks={subagentLinks}
       />
@@ -59,11 +72,12 @@ function DisplayItemView({
       projectPath={projectPath}
       toolMap={toolMap}
       toolResultMap={toolResultMap}
-            toolTimestamps={toolTimestamps}
+      toolTimestamps={toolTimestamps}
       reapplyKey={reapplyKey}
       expandAll={expandAll}
       defaultModel={defaultModel}
       subagentLinks={subagentLinks}
+      highlightEntry={highlightEntry}
     />
   );
 }
@@ -78,6 +92,7 @@ function CollapsedGroupView({
   expandAll,
   defaultModel,
   subagentLinks,
+  highlightEntry,
 }: {
   group: CollapsedGroup;
   projectPath: string;
@@ -88,18 +103,20 @@ function CollapsedGroupView({
   expandAll: boolean;
   defaultModel?: string;
   subagentLinks?: SubagentLinks;
+  highlightEntry?: number | null;
 }) {
-  const [expanded, setExpanded] = useState(expandAll);
+  const containsHighlight = highlightEntry != null && collapsedGroupContains(group, highlightEntry);
+  const [expanded, setExpanded] = useState(expandAll || containsHighlight);
   const reapplyRef = useRef(reapplyKey);
 
-  // React to expandAll / reapply
-  useEffect(() => { if (expandAll) setExpanded(true); }, [expandAll]);
+  // React to expandAll / reapply / highlight
+  useEffect(() => { if (expandAll || containsHighlight) setExpanded(true); }, [expandAll, containsHighlight]);
   useEffect(() => {
     if (reapplyRef.current !== reapplyKey) {
       reapplyRef.current = reapplyKey;
-      setExpanded(false);
+      setExpanded(containsHighlight);
     }
-  }, [reapplyKey]);
+  }, [reapplyKey, containsHighlight]);
 
   if (!expanded) {
     return (
@@ -135,12 +152,13 @@ function CollapsedGroupView({
           projectPath={projectPath}
           toolMap={toolMap}
           toolResultMap={toolResultMap}
-            toolTimestamps={toolTimestamps}
+          toolTimestamps={toolTimestamps}
           reapplyKey={reapplyKey}
           expandAll={expandAll}
           autoExpand={group.items.length === 1 && item.kind === "topical-group"}
           defaultModel={defaultModel}
           subagentLinks={subagentLinks}
+          highlightEntry={highlightEntry}
         />
       ))}
     </div>
@@ -158,6 +176,7 @@ function Layer2ItemView({
   autoExpand,
   defaultModel,
   subagentLinks,
+  highlightEntry,
 }: {
   item: Layer2Item;
   projectPath: string;
@@ -169,16 +188,17 @@ function Layer2ItemView({
   autoExpand?: boolean;
   defaultModel?: string;
   subagentLinks?: SubagentLinks;
+  highlightEntry?: number | null;
 }) {
   if (item.kind === "entry") {
     return (
       <EntryCard
         entry={item.entry}
-        forceExpanded={expandAll || item.defaultExpanded}
+        forceExpanded={expandAll || item.defaultExpanded || item.entry.lineIndex === highlightEntry}
         projectPath={projectPath}
         toolMap={toolMap}
         toolResultMap={toolResultMap}
-            toolTimestamps={toolTimestamps}
+        toolTimestamps={toolTimestamps}
         defaultModel={defaultModel}
         subagentLinks={subagentLinks}
       />
@@ -190,12 +210,13 @@ function Layer2ItemView({
       projectPath={projectPath}
       toolMap={toolMap}
       toolResultMap={toolResultMap}
-            toolTimestamps={toolTimestamps}
+      toolTimestamps={toolTimestamps}
       reapplyKey={reapplyKey}
       expandAll={expandAll}
       autoExpand={autoExpand}
       defaultModel={defaultModel}
       subagentLinks={subagentLinks}
+      highlightEntry={highlightEntry}
     />
   );
 }
@@ -211,6 +232,7 @@ function TopicalGroupView({
   autoExpand,
   defaultModel,
   subagentLinks,
+  highlightEntry,
 }: {
   group: TopicalGroup;
   projectPath: string;
@@ -222,18 +244,20 @@ function TopicalGroupView({
   autoExpand?: boolean;
   defaultModel?: string;
   subagentLinks?: SubagentLinks;
+  highlightEntry?: number | null;
 }) {
-  const [expanded, setExpanded] = useState(expandAll || !!autoExpand);
+  const containsHighlight = highlightEntry != null && group.entries.some((e) => e.lineIndex === highlightEntry);
+  const [expanded, setExpanded] = useState(expandAll || !!autoExpand || containsHighlight);
   const reapplyRef = useRef(reapplyKey);
 
-  useEffect(() => { if (expandAll) setExpanded(true); }, [expandAll]);
+  useEffect(() => { if (expandAll || containsHighlight) setExpanded(true); }, [expandAll, containsHighlight]);
   useEffect(() => {
     // Only react to reapply changes, not the initial mount
     if (reapplyRef.current !== reapplyKey) {
       reapplyRef.current = reapplyKey;
-      setExpanded(!!autoExpand);
+      setExpanded(!!autoExpand || containsHighlight);
     }
-  }, [reapplyKey, autoExpand]);
+  }, [reapplyKey, autoExpand, containsHighlight]);
 
   if (!expanded) {
     return (
@@ -259,6 +283,7 @@ function TopicalGroupView({
           <EntryCard
             key={entry.lineIndex}
             entry={entry}
+            forceExpanded={entry.lineIndex === highlightEntry}
             projectPath={projectPath}
             toolMap={toolMap}
             toolResultMap={toolResultMap}
@@ -298,12 +323,25 @@ export function SessionClient({
 }) {
   const [entries, setEntries] = useState<SessionEntry[]>([]);
   const [total, setTotal] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrolledRef = useRef(false);
-  const loadingMoreRef = useRef(false);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    const url = `/api/session-entries?sessionId=${encodeURIComponent(sessionId)}&projectPath=${encodeURIComponent(encodedProjectPath)}&offset=0&limit=10000`;
+    fetch(url)
+      .then((res) => res.json())
+      .then((data) => {
+        setEntries(data.entries ?? []);
+        setTotal(data.total ?? 0);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setLoading(false));
+  }, [sessionId, encodedProjectPath]);
+
+
   const [expandAll, setExpandAll] = useState(false);
   const [reapplyKey, setReapplyKey] = useState(0);
   const [filterState, setFilterState] = useState<FilterState>(() => initFilter());
@@ -336,74 +374,33 @@ export function SessionClient({
     return match ? parseInt(match[1]!, 10) : null;
   });
 
+  // Re-read hash on client-side navigation (sessionId change) and hash changes
   useEffect(() => {
-    const onHashChange = () => {
+    const readHash = () => {
       const match = window.location.hash.match(/^#entry-(\d+)$/);
       setHighlightEntry(match ? parseInt(match[1]!, 10) : null);
       scrolledRef.current = false;
     };
-    window.addEventListener("hashchange", onHashChange);
-    return () => window.removeEventListener("hashchange", onHashChange);
-  }, []);
+    // Sync on mount / sessionId change
+    readHash();
+    window.addEventListener("hashchange", readHash);
+    return () => window.removeEventListener("hashchange", readHash);
+  }, [sessionId]);
 
-  const fetchPage = useCallback(
-    async (offset: number, append: boolean) => {
-      const url = `/api/session-entries?sessionId=${encodeURIComponent(sessionId)}&projectPath=${encodeURIComponent(encodedProjectPath)}&offset=${offset}&limit=${PAGE_SIZE}`;
-      try {
-        const res = await fetch(url);
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({ error: res.statusText }));
-          throw new Error(body.error ?? `HTTP ${res.status}`);
-        }
-        const data: ApiResponse = await res.json();
-        setEntries((prev) => (append ? [...prev, ...data.entries] : data.entries));
-        setTotal(data.total);
-        setHasMore(data.hasMore);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    },
-    [sessionId, encodedProjectPath],
-  );
-
+  // Scroll to highlighted entry on mount / hash change
   useEffect(() => {
-    setLoading(true);
-    setError(null);
-    fetchPage(0, false).finally(() => setLoading(false));
-  }, [fetchPage]);
-
-  useEffect(() => {
-    if (highlightEntry == null || loading || scrolledRef.current) return;
-    const entryLoaded = entries.some((e) => e.lineIndex === highlightEntry);
-    if (!entryLoaded && hasMore) {
-      setLoadingMore(true);
-      fetchPage(entries.length, true).finally(() => setLoadingMore(false));
-      return;
-    }
-    if (entryLoaded) {
-      scrolledRef.current = true;
+    if (highlightEntry == null || scrolledRef.current) return;
+    scrolledRef.current = true;
+    requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          const el = document.getElementById(`entry-${highlightEntry}`);
-          if (el) {
-            el.scrollIntoView({ behavior: "smooth", block: "center" });
-            el.classList.add("ring-1", "ring-purple-500/60");
-          }
-        });
+        const el = document.getElementById(`entry-${highlightEntry}`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          el.classList.add("ring-1", "ring-purple-500/60");
+        }
       });
-    }
-  }, [highlightEntry, entries, loading, hasMore, fetchPage]);
-
-  // Eagerly load all remaining pages — with collapsed groups the DOM is small
-  useEffect(() => {
-    if (!hasMore || loadingMoreRef.current || loading) return;
-    loadingMoreRef.current = true;
-    setLoadingMore(true);
-    fetchPage(entries.length, true).finally(() => {
-      setLoadingMore(false);
-      loadingMoreRef.current = false;
     });
-  }, [hasMore, entries.length, fetchPage, loading]);
+  }, [highlightEntry, entries]);
 
   const displayItems = useMemo(() => buildDisplayItems(entries, displayOverrides), [entries, displayOverrides]);
 
@@ -572,12 +569,10 @@ export function SessionClient({
             expandAll={expandAll}
             defaultModel={defaultModel}
             subagentLinks={subagentLinks}
+            highlightEntry={highlightEntry}
           />
         ))}
       </div>
-      {loadingMore && (
-        <div className="text-neutral-500 text-sm text-center py-4">Loading more entries...</div>
-      )}
     </div>
   );
 }

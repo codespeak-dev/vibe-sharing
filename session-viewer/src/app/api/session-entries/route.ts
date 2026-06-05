@@ -5,8 +5,7 @@ import {
   isSessionFresh,
   getEntries,
   getEntryCount,
-  setEntries,
-  setSessionMetadata,
+  loadAndCacheFile,
 } from "@/lib/cache-db";
 import { findSessionFile } from "@/lib/session-metadata";
 
@@ -15,49 +14,6 @@ export interface SessionEntry {
   type: string;
   timestamp: string | null;
   raw: Record<string, unknown>;
-}
-
-/**
- * Parse a JSONL file into SessionEntry[].
- * Also stores results in SQLite so subsequent requests are instant.
- */
-async function loadAndCacheEntries(
-  filePath: string,
-  sessionId: string,
-): Promise<void> {
-  const content = await fs.readFile(filePath, "utf-8");
-  const stat = await fs.stat(filePath);
-  const entries: SessionEntry[] = [];
-  let lineIndex = 0;
-
-  for (const line of content.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const obj = JSON.parse(trimmed);
-      entries.push({
-        lineIndex,
-        type: obj.type ?? "unknown",
-        timestamp: obj.timestamp ?? null,
-        raw: obj,
-      });
-    } catch {
-      // Skip unparseable lines
-    }
-    lineIndex++;
-  }
-
-  const db = openCache();
-
-  // Ensure a sessions row exists so the FK on entries is satisfied.
-  // Use a minimal upsert that only sets mtime (metadata extraction fills the rest).
-  db.prepare(
-    `INSERT INTO sessions (file_path, session_id, mtime_ms)
-     VALUES (?, ?, ?)
-     ON CONFLICT(file_path) DO UPDATE SET mtime_ms = excluded.mtime_ms`,
-  ).run(filePath, sessionId, stat.mtimeMs);
-
-  setEntries(db, filePath, entries);
 }
 
 export async function GET(request: NextRequest) {
@@ -87,7 +43,7 @@ export async function GET(request: NextRequest) {
 
     // If cache is stale or empty, re-ingest
     if (!isSessionFresh(db, filePath, stat.mtimeMs)) {
-      await loadAndCacheEntries(filePath, sessionId);
+      await loadAndCacheFile(db, filePath, sessionId);
     }
 
     // Serve from SQLite — pagination handled by SQL

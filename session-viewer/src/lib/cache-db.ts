@@ -1,10 +1,19 @@
 import Database from "better-sqlite3";
+import fs from "node:fs/promises";
 import path from "node:path";
-import { CLAUDE_DIR } from "codespeak-vibe-share/config";
+import { CLAUDE_DIR, CLAUDE_PROJECTS_DIR } from "codespeak-vibe-share/config";
 import type { SessionMetadata } from "./session-metadata";
 import type { SessionEntry } from "../app/api/session-entries/route";
+import { classifyTag } from "./classify";
+import { REGISTRY } from "./message-type-registry";
 
 const DB_PATH = path.join(CLAUDE_DIR, ".session-viewer-cache.db");
+
+/**
+ * Bump this when computeTags changes so existing caches get rebuilt.
+ * Existing sessions will be lazily re-ingested on next access.
+ */
+const SCHEMA_VERSION = 2;
 
 let _db: Database.Database | null = null;
 
@@ -63,7 +72,21 @@ export function openCache(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_entries_cwd
       ON entries(cwd);
+
+    CREATE TABLE IF NOT EXISTS meta (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
+
+  // Check schema version — if stale, clear all cached data so it gets re-ingested
+  // with updated tags.
+  const versionRow = _db.prepare(`SELECT value FROM meta WHERE key = 'schema_version'`).get() as { value: string } | undefined;
+  const currentVersion = versionRow ? parseInt(versionRow.value, 10) : 0;
+  if (currentVersion < SCHEMA_VERSION) {
+    _db.exec(`DELETE FROM sessions`); // cascades to entries + tags
+    _db.prepare(`INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)`).run(String(SCHEMA_VERSION));
+  }
 
   return _db;
 }
@@ -334,6 +357,100 @@ export function clearAll(db: Database.Database): void {
 }
 
 // ---------------------------------------------------------------------------
+// Full re-index
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a single JSONL file and store its entries + tags in the cache.
+ */
+export async function loadAndCacheFile(
+  db: Database.Database,
+  filePath: string,
+  sessionId: string,
+): Promise<number> {
+  const content = await fs.readFile(filePath, "utf-8");
+  const stat = await fs.stat(filePath);
+  const entries: SessionEntry[] = [];
+  let lineIndex = 0;
+
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const obj = JSON.parse(trimmed);
+      entries.push({
+        lineIndex,
+        type: obj.type ?? "unknown",
+        timestamp: obj.timestamp ?? null,
+        raw: obj,
+      });
+    } catch {
+      // Skip unparseable lines
+    }
+    lineIndex++;
+  }
+
+  // Ensure a sessions row exists so the FK on entries is satisfied.
+  db.prepare(
+    `INSERT INTO sessions (file_path, session_id, mtime_ms)
+     VALUES (?, ?, ?)
+     ON CONFLICT(file_path) DO UPDATE SET mtime_ms = excluded.mtime_ms`,
+  ).run(filePath, sessionId, stat.mtimeMs);
+
+  setEntries(db, filePath, entries);
+  return entries.length;
+}
+
+/**
+ * Clear the cache and re-index ALL session JSONL files found in ~/.claude/projects/.
+ * Returns { sessionsIndexed, entriesIndexed }.
+ */
+export async function rebuildAllSessions(
+  db: Database.Database,
+): Promise<{ sessionsIndexed: number; entriesIndexed: number }> {
+  clearAll(db);
+
+  let sessionsIndexed = 0;
+  let entriesIndexed = 0;
+
+  // Scan all project directories
+  let projectDirs: string[];
+  try {
+    const dirEntries = await fs.readdir(CLAUDE_PROJECTS_DIR, { withFileTypes: true });
+    projectDirs = dirEntries
+      .filter((d) => d.isDirectory())
+      .map((d) => path.join(CLAUDE_PROJECTS_DIR, d.name));
+  } catch {
+    return { sessionsIndexed: 0, entriesIndexed: 0 };
+  }
+
+  // For each project dir, find all .jsonl files
+  for (const projectDir of projectDirs) {
+    let files: string[];
+    try {
+      const entries = await fs.readdir(projectDir);
+      files = entries.filter((f) => f.endsWith(".jsonl"));
+    } catch {
+      continue;
+    }
+
+    for (const file of files) {
+      const filePath = path.join(projectDir, file);
+      const sessionId = file.replace(".jsonl", "");
+      try {
+        const count = await loadAndCacheFile(db, filePath, sessionId);
+        sessionsIndexed++;
+        entriesIndexed += count;
+      } catch {
+        // Skip files that fail to parse
+      }
+    }
+  }
+
+  return { sessionsIndexed, entriesIndexed };
+}
+
+// ---------------------------------------------------------------------------
 // Tagging logic
 // ---------------------------------------------------------------------------
 
@@ -375,5 +492,87 @@ function computeTags(entry: SessionEntry): string[] {
     tags.push("task_completion");
   }
 
+  // Visual classification tag — used by the registry page to find examples
+  const entryTag = classifyTag({ type: entry.type, raw: entry.raw });
+  tags.push(REGISTRY[entryTag].searchTag);
+
   return tags;
+}
+
+// ---------------------------------------------------------------------------
+// Registry queries (cross-session)
+// ---------------------------------------------------------------------------
+
+/** Count entries per visual tag across all cached sessions. */
+export function getVisualTagCounts(
+  db: Database.Database,
+): Record<string, number> {
+  const rows = db
+    .prepare(
+      `SELECT tag, COUNT(*) as cnt FROM entry_tags WHERE tag LIKE 'visual:%' GROUP BY tag`,
+    )
+    .all() as Array<{ tag: string; cnt: number }>;
+  const counts: Record<string, number> = {};
+  for (const r of rows) counts[r.tag] = r.cnt;
+  return counts;
+}
+
+export interface RegistryInstance {
+  filePath: string;
+  sessionId: string;
+  aiTitle: string | null;
+  lineIndex: number;
+  type: string;
+  timestamp: string | null;
+  cwd: string | null;
+  raw: Record<string, unknown>;
+}
+
+/** Get paginated instances matching a visual tag across all sessions. */
+export function getInstancesByTag(
+  db: Database.Database,
+  tag: string,
+  offset: number,
+  limit: number,
+): { instances: RegistryInstance[]; total: number } {
+  const countRow = db
+    .prepare(`SELECT COUNT(*) as cnt FROM entry_tags WHERE tag = ?`)
+    .get(tag) as { cnt: number };
+
+  const rows = db
+    .prepare(
+      `SELECT e.line_index, e.type, e.timestamp,
+              COALESCE(e.cwd, (SELECT e2.cwd FROM entries e2 WHERE e2.file_path = e.file_path AND e2.cwd IS NOT NULL LIMIT 1)) AS cwd,
+              e.raw_json, e.file_path, s.session_id, s.ai_title
+       FROM entries e
+       JOIN entry_tags t ON (e.file_path = t.file_path AND e.line_index = t.line_index)
+       JOIN sessions s ON (e.file_path = s.file_path)
+       WHERE t.tag = ?
+       ORDER BY e.timestamp DESC
+       LIMIT ? OFFSET ?`,
+    )
+    .all(tag, limit, offset) as Array<{
+    line_index: number;
+    type: string;
+    timestamp: string | null;
+    cwd: string | null;
+    raw_json: string;
+    file_path: string;
+    session_id: string;
+    ai_title: string | null;
+  }>;
+
+  return {
+    total: countRow.cnt,
+    instances: rows.map((r) => ({
+      filePath: r.file_path,
+      sessionId: r.session_id,
+      aiTitle: r.ai_title,
+      lineIndex: r.line_index,
+      type: r.type ?? "unknown",
+      timestamp: r.timestamp,
+      cwd: r.cwd,
+      raw: JSON.parse(r.raw_json),
+    })),
+  };
 }

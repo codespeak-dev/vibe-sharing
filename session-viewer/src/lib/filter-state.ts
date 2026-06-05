@@ -8,7 +8,8 @@
  * Layer 2 (topical grouping) is structural and not user-overridable.
  */
 
-import type { EntryTag } from "./grouping";
+import type { EntryTag } from "./classify";
+import { FILTERABLE_TAGS as _FILTERABLE_TAGS, TAG_LABELS as _TAG_LABELS } from "./message-type-registry";
 
 export interface TagOverride {
   /** Override: is this tag primary interest? */
@@ -19,30 +20,11 @@ export interface TagOverride {
 
 export type FilterState = Partial<Record<EntryTag, TagOverride>>;
 
-/** Tags the user can toggle in the filter bar. Internal tags like filler/tool-result are excluded. */
-export const FILTERABLE_TAGS: EntryTag[] = [
-  "user-prompt",
-  "assistant-text",
-  "plan",
-  "agent-question",
-  "exit-plan-mode",
-  "tool-call",
-  "subagent",
-  "noise",
-  "misc",
-];
+/** Tags the user can toggle in the filter bar. Derived from the registry. */
+export const FILTERABLE_TAGS: EntryTag[] = _FILTERABLE_TAGS;
 
-export const TAG_LABELS: Record<string, string> = {
-  "user-prompt": "Prompts",
-  "assistant-text": "Responses",
-  "plan": "Plans",
-  "agent-question": "Questions",
-  "exit-plan-mode": "Plan exit",
-  "tool-call": "Tool calls",
-  "subagent": "Subagents",
-  "noise": "Noise",
-  "misc": "Misc",
-};
+/** Human-readable labels for filter tags. Derived from the registry. */
+export const TAG_LABELS: Record<string, string> = _TAG_LABELS;
 
 const STORAGE_KEY = "session-viewer-filter-v2";
 
