@@ -403,11 +403,11 @@ export function SessionClient({
   // Scroll to highlighted entry on mount / hash change
   useEffect(() => {
     if (highlightEntry == null || scrolledRef.current) return;
-    scrolledRef.current = true;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         const el = document.getElementById(`entry-${highlightEntry}`);
         if (el) {
+          scrolledRef.current = true;
           el.scrollIntoView({ behavior: "smooth", block: "center" });
           el.classList.add("ring-1", "ring-purple-500/60");
         }
