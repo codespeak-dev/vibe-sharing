@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { formatDate, formatBytes, truncate, stripIdeTags } from "@/lib/format";
+import { formatDateTime, formatTime, formatDuration, formatBytes, truncate, stripIdeTags, isSameDate } from "@/lib/format";
 
 interface SessionCardProps {
   sessionId: string;
@@ -15,6 +15,7 @@ interface SessionCardProps {
   modified: string | null;
   sizeBytes: number;
   hasPlans?: boolean;
+  userPromptCount?: number;
 }
 
 export function SessionCard({
@@ -29,6 +30,7 @@ export function SessionCard({
   modified,
   sizeBytes,
   hasPlans,
+  userPromptCount,
 }: SessionCardProps) {
   const description = aiTitle || summary || (firstPrompt ? stripIdeTags(firstPrompt) : null);
   const displayText = description ? truncate(description, 120) : sessionId.slice(0, 20) + "...";
@@ -53,9 +55,26 @@ export function SessionCard({
       </div>
       <div className="flex items-center gap-3 mt-2 text-xs text-neutral-500">
         {messageCount != null && (
-          <span>{messageCount} {messageCount === 1 ? "msg" : "msgs"}</span>
+          <span>
+            {messageCount} {messageCount === 1 ? "msg" : "msgs"}
+            {userPromptCount != null && userPromptCount > 0 && (
+              <> ({userPromptCount} {userPromptCount === 1 ? "prompt" : "prompts"})</>
+            )}
+          </span>
         )}
-        {modified && <span>{formatDate(modified)}</span>}
+        {created && modified && created !== modified ? (
+          isSameDate(created, modified) ? (
+            <span>
+              {formatDateTime(created)} &rarr; {formatTime(modified)} ({formatDuration(created, modified)})
+            </span>
+          ) : (
+            <span>
+              {formatDateTime(created)} &rarr; {formatDateTime(modified)} ({formatDuration(created, modified)})
+            </span>
+          )
+        ) : created ? (
+          <span>{formatDateTime(created)}</span>
+        ) : null}
         <span>{formatBytes(sizeBytes)}</span>
       </div>
     </Link>

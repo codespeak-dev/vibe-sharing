@@ -1,8 +1,7 @@
 import path from "node:path";
 import { discoverAllSessions } from "codespeak-vibe-share/sessions/discovery";
 import { decodeFromUrl } from "@/lib/urls";
-import { extractAiTitles } from "@/lib/session-titles";
-import { detectSessionsWithPlans } from "@/lib/session-plans";
+import { extractAllSessionMetadata } from "@/lib/session-metadata";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { SessionCard } from "@/components/session-card";
 
@@ -32,11 +31,8 @@ export default async function SessionListPage({
       return tb - ta;
     });
 
-  // Extract ai-titles and detect plans from Claude Code sessions in parallel
-  const [aiTitles, sessionsWithPlans] = await Promise.all([
-    extractAiTitles(allSessions, projectPath),
-    detectSessionsWithPlans(allSessions, projectPath),
-  ]);
+  // Extract metadata (ai-titles, plans, prompt counts) from Claude Code sessions
+  const sessionMetadata = await extractAllSessionMetadata(allSessions, projectPath);
 
   return (
     <div>
@@ -57,21 +53,22 @@ export default async function SessionListPage({
       {allSessions.length === 0 ? (
         <p className="text-neutral-500">No sessions found for this project.</p>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 grid-cols-1">
           {allSessions.map((s) => (
             <SessionCard
               key={s.sessionId}
               sessionId={s.sessionId}
               projectHref={projectHref}
               agentName={s.agentName}
-              aiTitle={aiTitles.get(s.sessionId) ?? null}
+              aiTitle={sessionMetadata.get(s.sessionId)?.aiTitle ?? null}
               summary={s.summary}
               firstPrompt={s.firstPrompt}
               messageCount={s.messageCount}
               created={s.created}
               modified={s.modified}
               sizeBytes={s.sizeBytes}
-              hasPlans={sessionsWithPlans.has(s.sessionId)}
+              hasPlans={sessionMetadata.get(s.sessionId)?.hasPlans}
+              userPromptCount={sessionMetadata.get(s.sessionId)?.userPromptCount}
             />
           ))}
         </div>
