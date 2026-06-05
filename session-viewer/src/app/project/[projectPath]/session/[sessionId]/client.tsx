@@ -275,6 +275,34 @@ function ToolCallGroupView({
   const primaryEntry = group.entries[0]!;
   const extraCount = group.entries.length - 1;
 
+  // Sub-group consecutive progress entries within the expanded view
+  const chunks = useMemo(() => {
+    const result: Array<{ kind: "entry"; entry: SessionEntry; isLast: boolean } | { kind: "progress-run"; entries: SessionEntry[] }> = [];
+    let i = 0;
+    const entries = group.entries;
+    while (i < entries.length) {
+      const e = entries[i]!;
+      if ((e.raw.type ?? e.type) === "progress") {
+        const buf: SessionEntry[] = [e];
+        let j = i + 1;
+        while (j < entries.length && ((entries[j]!.raw.type ?? entries[j]!.type) === "progress")) {
+          buf.push(entries[j]!);
+          j++;
+        }
+        if (buf.length >= 2) {
+          result.push({ kind: "progress-run", entries: buf });
+        } else {
+          result.push({ kind: "entry", entry: e, isLast: i === entries.length - 1 });
+        }
+        i = j;
+      } else {
+        result.push({ kind: "entry", entry: e, isLast: i === entries.length - 1 });
+        i++;
+      }
+    }
+    return result;
+  }, [group.entries]);
+
   if (!expanded) {
     return (
       <div
@@ -311,7 +339,95 @@ function ToolCallGroupView({
         ▾ {group.summary}
       </button>
       <div className="space-y-2 p-2 border-t border-indigo-900/30 bg-indigo-950/15">
-        {group.entries.map((entry) => (
+        {chunks.map((chunk, ci) =>
+          chunk.kind === "entry" ? (
+            <EntryCard
+              key={chunk.entry.lineIndex}
+              entry={chunk.entry}
+              forceExpanded={chunk.entry.lineIndex === highlightEntry || chunk.isLast}
+              projectPath={projectPath}
+              toolMap={toolMap}
+              toolResultMap={toolResultMap}
+              toolTimestamps={toolTimestamps}
+              defaultModel={defaultModel}
+              subagentLinks={subagentLinks}
+              todoWriteDiffs={todoWriteDiffs}
+            />
+          ) : (
+            <InlineProgressGroup
+              key={`pg-${chunk.entries[0]!.lineIndex}`}
+              entries={chunk.entries}
+              expandAll={expandAll}
+              reapplyKey={reapplyKey}
+              highlightEntry={highlightEntry}
+              projectPath={projectPath}
+              toolMap={toolMap}
+              toolResultMap={toolResultMap}
+              toolTimestamps={toolTimestamps}
+              defaultModel={defaultModel}
+              subagentLinks={subagentLinks}
+              todoWriteDiffs={todoWriteDiffs}
+            />
+          ),
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Collapsible progress run nested inside a tool-call topical group. */
+function InlineProgressGroup({
+  entries, expandAll, reapplyKey, highlightEntry,
+  projectPath, toolMap, toolResultMap, toolTimestamps, defaultModel, subagentLinks, todoWriteDiffs,
+}: {
+  entries: SessionEntry[];
+  expandAll: boolean;
+  reapplyKey: number;
+  highlightEntry?: number | null;
+  projectPath: string;
+  toolMap: Map<string, ToolUseInfo>;
+  toolResultMap: Map<string, string>;
+  toolTimestamps: Map<string, { useTs: string | null; resultTs: string | null }>;
+  defaultModel?: string;
+  subagentLinks?: SubagentLinks;
+  todoWriteDiffs?: Map<string, TodoWriteDiff>;
+}) {
+  const containsHighlight = highlightEntry != null && entries.some((e) => e.lineIndex === highlightEntry);
+  const [expanded, setExpanded] = useState(expandAll || containsHighlight);
+  const reapplyRef = useRef(reapplyKey);
+  const duration = useMemo(() => topicalGroupDuration(entries), [entries]);
+
+  useEffect(() => { if (expandAll || containsHighlight) setExpanded(true); }, [expandAll, containsHighlight]);
+  useEffect(() => {
+    if (reapplyRef.current !== reapplyKey) {
+      reapplyRef.current = reapplyKey;
+      setExpanded(containsHighlight);
+    }
+  }, [reapplyKey, containsHighlight]);
+
+  const label = `${entries.length} progress${duration ? ` (${duration})` : ""}`;
+
+  if (!expanded) {
+    return (
+      <button
+        onClick={() => setExpanded(true)}
+        className="w-full text-left text-[11px] text-neutral-500 hover:text-neutral-300 py-1.5 px-3 cursor-pointer transition-colors border border-neutral-800/30 rounded-lg hover:border-neutral-700"
+      >
+        ▸ {label}
+      </button>
+    );
+  }
+
+  return (
+    <div className="border border-neutral-800/30 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setExpanded(false)}
+        className="w-full text-left text-[11px] text-neutral-500 hover:text-neutral-300 py-1.5 px-3 cursor-pointer transition-colors"
+      >
+        ▾ {label}
+      </button>
+      <div className="space-y-2 p-2 border-t border-neutral-800/30 bg-neutral-950/30">
+        {entries.map((entry) => (
           <EntryCard
             key={entry.lineIndex}
             entry={entry}
