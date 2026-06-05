@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { EntryCard, type ToolUseInfo } from "@/components/entry-card";
+import { EntryCard } from "@/components/entry-card";
+import { type ToolUseInfo } from "@/components/message-renderer";
 import { getDisplayType } from "@/components/message-renderer";
 
 interface SessionEntry {

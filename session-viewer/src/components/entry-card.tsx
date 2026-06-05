@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { JsonViewer } from "./json-viewer";
-import { MessageRenderer, hasRenderedView, getHeaderExtra, isHeaderOnly, getCollapsedPreview, getDisplayType, entryReferencesPlans, entryHasThinking, getThinkingPreview, getEntryIdeTags } from "./message-renderer";
+import { MessageRenderer, hasRenderedView, getHeaderExtra, isHeaderOnly, getCollapsedPreview, getDisplayType, entryReferencesPlans, entryHasThinking, getThinkingPreview, getEntryIdeTags, type ToolUseInfo } from "./message-renderer";
 import { truncate, foldCwd, shortenPath } from "@/lib/format";
 import { formatDateTime } from "@/lib/format";
 
@@ -24,11 +24,6 @@ const TYPE_COLORS: Record<string, string> = {
   "ai-title": "bg-cyan-900/50 text-cyan-300",
   "tool-result": "bg-amber-900/50 text-amber-300",
 };
-
-export interface ToolUseInfo {
-  name: string;
-  input?: Record<string, unknown>;
-}
 
 /** Extract a short file/path/pattern label from a tool_use input. */
 function toolDetail(info: ToolUseInfo, cwd: string): string | null {
@@ -125,15 +120,15 @@ export function EntryCard({ entry, forceExpanded, projectPath, toolMap }: { entr
             {t.name}
           </span>
         ))}
-        {!expanded && toolInfos.length > 0 && (
+        {toolInfos.length > 0 && (
           <span className="text-[10px] text-neutral-500 truncate font-mono">
             {toolInfos.map((t) => t.detail).filter(Boolean).join(", ")}
           </span>
         )}
-        {!expanded && toolInfos.length === 0 && preview && !headerExtra && (
+        {toolInfos.length === 0 && preview && !headerExtra && (
           <span className="text-[10px] text-neutral-500 truncate">{truncate(preview, 120)}</span>
         )}
-        {!expanded && thinkingPreview && (
+        {thinkingPreview && (
           <span className="text-[10px] text-sky-400/60 truncate italic">{truncate(thinkingPreview, 80)}</span>
         )}
         <div className="ml-auto flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
@@ -171,7 +166,7 @@ export function EntryCard({ entry, forceExpanded, projectPath, toolMap }: { entr
       {showBody && (
         <div className="p-3 border-t border-neutral-800">
           {view === "rendered" ? (
-            <MessageRenderer entry={entry.raw} cwd={cwd} />
+            <MessageRenderer entry={entry.raw} cwd={cwd} toolMap={toolMap} />
           ) : (
             <JsonViewer data={entry.raw} defaultCollapsed={false} />
           )}
