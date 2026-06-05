@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { stripIdeTags, truncate } from "@/lib/format";
+import { stripIdeTags, parseIdeTags, foldCwd, shortenPath, type IdeTag, truncate } from "@/lib/format";
 
 interface ContentBlock {
   type: string;
@@ -64,6 +64,32 @@ function isPlanToolResult(block: ContentBlock): boolean {
 export function entryReferencesPlans(entry: EntryRaw): boolean {
   const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
   return blocks.some((b) => isPlanToolUse(b) || isPlanToolResult(b));
+}
+
+/** Check if any content block in an entry is a thinking block. */
+export function entryHasThinking(entry: EntryRaw): boolean {
+  const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
+  return blocks.some((b) => b.type === "thinking" && !!b.thinking);
+}
+
+/** Get IDE tags from text blocks in an entry. */
+export function getEntryIdeTags(entry: EntryRaw): IdeTag[] {
+  const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
+  const tags: IdeTag[] = [];
+  for (const b of blocks) {
+    if (b.type === "text" && b.text) {
+      tags.push(...parseIdeTags(b.text).tags);
+    }
+  }
+  return tags;
+}
+
+/** Get a short preview of the first thinking block in an entry. */
+export function getThinkingPreview(entry: EntryRaw): string | null {
+  const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
+  const thinking = blocks.find((b) => b.type === "thinking" && !!b.thinking);
+  if (!thinking?.thinking) return null;
+  return thinking.thinking.split("\n")[0] ?? null;
 }
 
 /** Extract a human-readable plan name from a file path. */
@@ -166,14 +192,36 @@ export function isHeaderOnly(entry: EntryRaw): boolean {
   return false;
 }
 
-export function MessageRenderer({ entry }: { entry: EntryRaw }) {
+export interface ToolUseInfo {
+  name: string;
+  input?: Record<string, unknown>;
+}
+
+/** Extract a meaningful detail string (file path, pattern, command) from tool input. */
+function toolDetailStr(name: string, input: Record<string, unknown> | undefined, cwd: string): string | null {
+  if (!input) return null;
+  if (name === "Bash" && typeof input.command === "string") {
+    return truncate(input.command.split("\n")[0] ?? "", 80);
+  }
+  const raw =
+    (typeof input.file_path === "string" && input.file_path) ||
+    (typeof input.path === "string" && input.path) ||
+    (typeof input.pattern === "string" && input.pattern) ||
+    null;
+  if (!raw) return null;
+  let s = cwd ? foldCwd(raw, cwd) : raw;
+  if (s.length > 60) s = shortenPath(s, 60);
+  return s;
+}
+
+export function MessageRenderer({ entry, cwd, toolMap }: { entry: EntryRaw; cwd?: string; toolMap?: Map<string, ToolUseInfo> }) {
   const type = entry.type ?? "unknown";
 
   switch (type) {
     case "user":
-      return <UserMessage entry={entry} />;
+      return <UserMessage entry={entry} cwd={cwd ?? ""} toolMap={toolMap} />;
     case "assistant":
-      return <AssistantMessage entry={entry} />;
+      return <AssistantMessage entry={entry} cwd={cwd ?? ""} />;
     case "system":
       return <SystemMessage entry={entry} />;
     case "progress":
@@ -191,7 +239,7 @@ export function MessageRenderer({ entry }: { entry: EntryRaw }) {
   }
 }
 
-function UserMessage({ entry }: { entry: EntryRaw }) {
+function UserMessage({ entry, cwd, toolMap }: { entry: EntryRaw; cwd: string; toolMap?: Map<string, ToolUseInfo> }) {
   const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
   return (
     <div className="space-y-2">
@@ -199,13 +247,13 @@ function UserMessage({ entry }: { entry: EntryRaw }) {
         <div className="text-xs text-neutral-500">role: {entry.message.role}</div>
       )}
       {blocks.map((block, i) => (
-        <ContentBlockRenderer key={i} block={block} />
+        <ContentBlockRenderer key={i} block={block} cwd={cwd} toolMap={toolMap} />
       ))}
     </div>
   );
 }
 
-function AssistantMessage({ entry }: { entry: EntryRaw }) {
+function AssistantMessage({ entry, cwd }: { entry: EntryRaw; cwd: string }) {
   const blocks = (Array.isArray(entry.message?.content) ? entry.message.content : []);
   return (
     <div className="space-y-2">
@@ -213,23 +261,23 @@ function AssistantMessage({ entry }: { entry: EntryRaw }) {
         <div className="text-xs text-neutral-500">{String(entry.message.model)}</div>
       )}
       {blocks.map((block, i) => (
-        <ContentBlockRenderer key={i} block={block} />
+        <ContentBlockRenderer key={i} block={block} cwd={cwd} />
       ))}
     </div>
   );
 }
 
-function ContentBlockRenderer({ block }: { block: ContentBlock }) {
+function ContentBlockRenderer({ block, cwd, toolMap }: { block: ContentBlock; cwd: string; toolMap?: Map<string, ToolUseInfo> }) {
   switch (block.type) {
     case "text":
-      return <TextBlock text={block.text ?? ""} />;
+      return <TextBlock text={block.text ?? ""} cwd={cwd} />;
     case "thinking":
       return <ThinkingBlock text={block.thinking ?? ""} />;
     case "tool_use":
       if (isPlanToolUse(block)) return <PlanToolUseBlock block={block} />;
-      return <ToolUseBlock block={block} />;
+      return <ToolUseBlock block={block} cwd={cwd} />;
     case "tool_result":
-      return <ToolResultBlock block={block} />;
+      return <ToolResultBlock block={block} cwd={cwd} toolMap={toolMap} />;
     default:
       return (
         <div className="text-xs text-neutral-500 border border-neutral-800 rounded p-2">
@@ -239,12 +287,66 @@ function ContentBlockRenderer({ block }: { block: ContentBlock }) {
   }
 }
 
-function TextBlock({ text }: { text: string }) {
-  const cleaned = stripIdeTags(text);
-  if (!cleaned) return null;
+function foldAndShortenPreview(text: string, cwd: string, maxLen: number): string {
+  let folded = foldCwd(text, cwd);
+  // Shorten any remaining long paths (sequences of /word/word/...)
+  folded = folded.replace(/(?:\/[\w._-]+){3,}/g, (match) => shortenPath(match, 40));
+  return truncate(folded, maxLen);
+}
+
+function IdeTagBlock({ tagName, content, cwd }: { tagName: string; content: string; cwd: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const preview = foldAndShortenPreview(content.split("\n")[0] ?? "", cwd, 60);
+  const displayContent = foldCwd(content, cwd);
+
   return (
-    <div className="text-sm whitespace-pre-wrap break-words leading-relaxed bg-neutral-900/30 rounded p-3 border border-neutral-800/50">
-      {cleaned}
+    <span className="inline-flex flex-col align-top">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-400 hover:bg-neutral-700 cursor-pointer transition-colors"
+      >
+        <span>{expanded ? "▾" : "▸"}</span>
+        <span className="font-mono">&lt;{tagName}&gt;</span>
+        {!expanded && (
+          <span className="font-normal text-neutral-500 max-w-[250px] truncate">{preview}</span>
+        )}
+      </button>
+      {expanded && (
+        <div className="mt-1 text-xs text-neutral-400 whitespace-pre-wrap break-words leading-relaxed bg-neutral-900/50 border border-neutral-700 rounded p-2 max-h-96 overflow-y-auto">
+          {displayContent}
+        </div>
+      )}
+    </span>
+  );
+}
+
+function TextBlock({ text, cwd }: { text: string; cwd: string }) {
+  const { segments, tags } = parseIdeTags(text);
+  const hasIdeContent = tags.length > 0;
+
+  // Check if there's any non-IDE text content
+  const plainText = segments
+    .filter((s) => s.type === "text")
+    .map((s) => s.text ?? "")
+    .join("")
+    .trim();
+
+  if (!plainText && !hasIdeContent) return null;
+
+  return (
+    <div className="space-y-2">
+      {plainText && (
+        <div className="text-sm whitespace-pre-wrap break-words leading-relaxed bg-neutral-900/30 rounded p-3 border border-neutral-800/50">
+          {plainText}
+        </div>
+      )}
+      {hasIdeContent && (
+        <div className="flex flex-wrap gap-1.5">
+          {tags.map((tag, i) => (
+            <IdeTagBlock key={i} tagName={tag.tagName} content={tag.content} cwd={cwd} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -276,12 +378,11 @@ function ThinkingBlock({ text }: { text: string }) {
   );
 }
 
-function ToolUseBlock({ block }: { block: ContentBlock }) {
+function ToolUseBlock({ block, cwd }: { block: ContentBlock; cwd: string }) {
   const [expanded, setExpanded] = useState(false);
   const inputStr = block.input ? JSON.stringify(block.input, null, 2) : "";
-  const inputPreview = block.input
-    ? truncate(JSON.stringify(block.input), 80)
-    : "";
+  const name = block.name ?? "tool";
+  const detail = toolDetailStr(name, block.input, cwd);
 
   return (
     <div className="border border-amber-900/50 rounded bg-amber-950/20">
@@ -290,10 +391,8 @@ function ToolUseBlock({ block }: { block: ContentBlock }) {
         className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 cursor-pointer hover:bg-amber-950/30"
       >
         <span className="text-neutral-500">{expanded ? "v" : ">"}</span>
-        <span className="font-semibold text-amber-400">{block.name ?? "tool"}</span>
-        {!expanded && (
-          <span className="text-neutral-500 truncate font-mono">{inputPreview}</span>
-        )}
+        <span className="font-semibold text-amber-400">{name}</span>
+        {detail && <span className="text-neutral-500 truncate font-mono">{detail}</span>}
       </button>
       {expanded && inputStr && (
         <pre className="px-3 pb-3 text-xs text-neutral-400 font-mono whitespace-pre-wrap break-words max-h-96 overflow-y-auto">
@@ -377,8 +476,8 @@ function PlanToolUseBlock({ block }: { block: ContentBlock }) {
   );
 }
 
-function ToolResultBlock({ block }: { block: ContentBlock }) {
-  const [expanded, setExpanded] = useState(false);
+function ToolResultBlock({ block, cwd, toolMap }: { block: ContentBlock; cwd: string; toolMap?: Map<string, ToolUseInfo> }) {
+  const [expanded, setExpanded] = useState(true);
   let content = "";
   if (typeof block.content === "string") {
     content = block.content;
@@ -387,7 +486,11 @@ function ToolResultBlock({ block }: { block: ContentBlock }) {
       .map((c) => (typeof c === "string" ? c : c.text ?? JSON.stringify(c)))
       .join("\n");
   }
-  const preview = truncate(content.split("\n")[0] ?? "", 80);
+
+  // Resolve tool name + detail from the matching tool_use block
+  const resolved = block.tool_use_id && toolMap ? toolMap.get(block.tool_use_id) : undefined;
+  const toolName = resolved?.name ?? null;
+  const detail = resolved ? toolDetailStr(resolved.name, resolved.input, cwd) : null;
 
   return (
     <div className="border border-neutral-800 rounded bg-neutral-950/50">
@@ -396,13 +499,13 @@ function ToolResultBlock({ block }: { block: ContentBlock }) {
         className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 cursor-pointer hover:bg-neutral-900/50"
       >
         <span className="text-neutral-500">{expanded ? "v" : ">"}</span>
-        <span className="text-neutral-400">Tool Result</span>
-        {block.tool_use_id && (
+        <span className="text-neutral-400">{toolName ? `${toolName} result` : "Tool Result"}</span>
+        {detail && <span className="text-neutral-500 truncate font-mono">{detail}</span>}
+        {!detail && block.tool_use_id && (
           <span className="text-neutral-600 font-mono text-[10px]">
             {block.tool_use_id.slice(0, 12)}...
           </span>
         )}
-        {!expanded && <span className="text-neutral-500 truncate">{preview}</span>}
       </button>
       {expanded && content && (
         <pre className="px-3 pb-3 text-xs text-neutral-400 font-mono whitespace-pre-wrap break-words max-h-96 overflow-y-auto">
@@ -490,3 +593,4 @@ function LastPrompt({ entry }: { entry: EntryRaw }) {
     </div>
   );
 }
+
