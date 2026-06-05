@@ -68,6 +68,7 @@ export default async function SessionListPage({
               modified={s.modified}
               sizeBytes={s.sizeBytes}
               hasPlans={sessionMetadata.get(s.sessionId)?.hasPlans}
+              firstPlanLineIndex={sessionMetadata.get(s.sessionId)?.firstPlanLineIndex}
               userPromptCount={sessionMetadata.get(s.sessionId)?.userPromptCount}
             />
           ))}

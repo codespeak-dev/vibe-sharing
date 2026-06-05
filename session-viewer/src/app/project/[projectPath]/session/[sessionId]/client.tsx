@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { EntryCard } from "@/components/entry-card";
 import { getDisplayType } from "@/components/message-renderer";
 
@@ -38,8 +38,9 @@ function groupEntries(entries: SessionEntry[]): Segment[] {
   return segments;
 }
 
-function CollapsedGroup({ entries }: { entries: SessionEntry[] }) {
-  const [expanded, setExpanded] = useState(false);
+function CollapsedGroup({ entries, highlightEntry }: { entries: SessionEntry[]; highlightEntry: number | null }) {
+  const containsTarget = highlightEntry != null && entries.some((e) => e.lineIndex === highlightEntry);
+  const [expanded, setExpanded] = useState(containsTarget);
 
   if (expanded) {
     return (
@@ -88,6 +89,14 @@ export function SessionClient({
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const scrolledRef = useRef(false);
+
+  // Parse #entry-N from URL hash
+  const highlightEntry = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const match = window.location.hash.match(/^#entry-(\d+)$/);
+    return match ? parseInt(match[1]!, 10) : null;
+  }, []);
 
   const fetchPage = useCallback(
     async (offset: number, append: boolean) => {
@@ -114,6 +123,29 @@ export function SessionClient({
     setError(null);
     fetchPage(0, false).finally(() => setLoading(false));
   }, [fetchPage]);
+
+  // Load more pages if needed to reach the target entry, then scroll to it
+  useEffect(() => {
+    if (highlightEntry == null || loading || scrolledRef.current) return;
+    const entryLoaded = entries.some((e) => e.lineIndex === highlightEntry);
+    if (!entryLoaded && hasMore) {
+      // Need to load more entries to reach the target
+      setLoadingMore(true);
+      fetchPage(entries.length, true).finally(() => setLoadingMore(false));
+      return;
+    }
+    if (entryLoaded) {
+      scrolledRef.current = true;
+      // Wait for DOM to render the expanded group
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`entry-${highlightEntry}`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          el.classList.add("ring-1", "ring-purple-500/60");
+        }
+      });
+    }
+  }, [highlightEntry, entries, loading, hasMore, fetchPage]);
 
   const loadMore = async () => {
     setLoadingMore(true);
@@ -157,7 +189,7 @@ export function SessionClient({
           seg.kind === "user" ? (
             <EntryCard key={seg.entry.lineIndex} entry={seg.entry} />
           ) : (
-            <CollapsedGroup key={`group-${i}`} entries={seg.entries} />
+            <CollapsedGroup key={`group-${i}`} entries={seg.entries} highlightEntry={highlightEntry} />
           ),
         )}
       </div>
