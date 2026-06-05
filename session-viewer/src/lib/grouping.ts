@@ -107,6 +107,9 @@ function isLightNoise(entry: SessionEntry): boolean {
   return false;
 }
 
+/** Tags that represent a tool_use entry (should be paired with tool_result). */
+const TOOL_USE_TAGS = new Set<EntryTag>(["tool-call", "subagent"]);
+
 /**
  * Pre-scan to identify entries that are part of parallel tool call batches.
  * A parallel batch is 2+ consecutive tool-call entries (skipping light noise)
@@ -117,14 +120,14 @@ function findParallelIndices(entries: SessionEntry[]): Set<number> {
   let i = 0;
   while (i < entries.length) {
     const tag = classifyTag(asClassifyEntry(entries[i]!));
-    if (tag !== "tool-call") { i++; continue; }
+    if (!TOOL_USE_TAGS.has(tag)) { i++; continue; }
 
     // Collect consecutive tool-call entries (skipping light noise)
     const callIndices: number[] = [i];
     let j = i + 1;
     while (j < entries.length) {
       if (isLightNoise(entries[j]!)) { j++; continue; }
-      if (classifyTag(asClassifyEntry(entries[j]!)) === "tool-call") {
+      if (TOOL_USE_TAGS.has(classifyTag(asClassifyEntry(entries[j]!)))) {
         callIndices.push(j);
         j++;
         continue;
@@ -261,7 +264,7 @@ function buildLayer2(entries: SessionEntry[], overrides?: DisplayOverrides): Lay
     }
 
     // 4. Sequential tool_use → try to pair with adjacent tool_result
-    if (tag === "tool-call") {
+    if (TOOL_USE_TAGS.has(tag)) {
       let j = i + 1;
       const noiseBuf: SessionEntry[] = [];
       while (j < entries.length && isLightNoise(entries[j]!)) {
