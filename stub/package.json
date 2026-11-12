@@ -1,0 +1,23 @@
+{
+  "name": "codespeak-vibe-share",
+  "version": "0.3.0",
+  "description": "Retired. To share your AI coding sessions with CodeSpeak, visit https://app.codespeak.dev",
+  "type": "module",
+  "bin": {
+    "codespeak-vibe-share": "./bin/codespeak-vibe-share.js"
+  },
+  "files": [
+    "bin"
+  ],
+  "author": "CodeSpeak <info@codespeak.dev> (https://codespeak.dev)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/codespeak-dev/vibe-sharing.git",
+    "directory": "stub"
+  },
+  "homepage": "https://app.codespeak.dev",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
