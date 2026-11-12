@@ -1,53 +1,22 @@
 {
   "name": "codespeak-vibe-share",
-  "version": "0.2.3",
-  "description": "Share your vibe-coded project and AI coding sessions",
+  "version": "0.3.0",
+  "description": "Retired. To share your AI coding sessions with CodeSpeak, visit https://app.codespeak.dev",
   "type": "module",
   "bin": {
-    "codespeak-vibe-share": "./dist/index.js"
-  },
-  "exports": {
-    "./sessions/*": "./dist/sessions/*.js",
-    "./utils/*": "./dist/utils/*.js",
-    "./config": "./dist/config.js"
+    "codespeak-vibe-share": "./bin/codespeak-vibe-share.js"
   },
   "files": [
-    "dist"
-  ],
-  "scripts": {
-    "build": "tsc",
-    "dev": "tsx src/index.ts",
-    "start": "node dist/index.js",
-    "prepublishOnly": "tsc"
-  },
-  "keywords": [
-    "vibe-coding",
-    "ai-sessions",
-    "sharing"
+    "bin"
   ],
   "author": "CodeSpeak <info@codespeak.dev> (https://codespeak.dev)",
   "repository": {
     "type": "git",
     "url": "https://github.com/codespeak-dev/vibe-sharing.git"
   },
+  "homepage": "https://app.codespeak.dev",
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0"
-  },
-  "dependencies": {
-    "@inquirer/prompts": "^7.0.0",
-    "archiver": "^7.0.0",
-    "chalk": "^5.3.0",
-    "commander": "^13.0.0",
-    "ink": "^6.8.0",
-    "ora": "^8.0.0",
-    "react": "^19.2.4"
-  },
-  "devDependencies": {
-    "@types/archiver": "^6.0.0",
-    "@types/node": "^22.0.0",
-    "@types/react": "^19.2.14",
-    "tsx": "^4.0.0",
-    "typescript": "^5.7.0"
   }
 }
